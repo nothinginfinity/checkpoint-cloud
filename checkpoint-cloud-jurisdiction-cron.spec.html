@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Checkpoint Cloud Spec — Scheduled Public Notice + Zip Jurisdiction Map</title>
+  <meta
+    name="description"
+    content="Checkpoint Cloud Spec is an HTML-first build contract for a Cloudflare Workers, Cron, D1, R2, CSV, and GeoJSON pipeline that maps public checkpoint notices by zip code jurisdiction for commuter delay planning."
+  />
+
+  <script type="application/json" id="app-spec">
+  {
+    "spec_name": "Checkpoint Cloud Spec HTML",
+    "spec_version": "0.2.0",
+    "source_of_truth": "html",
+    "kind": "scheduled-public-notice-commuter-delay-system",
+    "stage": "visual-spec-plus-build-contract",
+    "product": {
+      "name": "Checkpoint Cloud",
+      "alternate_names": [
+        "Checkpoint Delay Cloud",
+        "DUI Checkpoint Public Notice Board",
+        "Zip Jurisdiction Checkpoint Map",
+        "Weekend Commute Checkpoint Board",
+        "Public Notice Choke Point Planner"
+      ],
+      "tagline": "Public checkpoint notices, normalized by zip jurisdiction, refreshed on schedule.",
+      "one_liner": "A Cloudflare-native dashboard that checks official/public checkpoint notice sources on a configurable schedule, maps each zip code to the responsible police/sheriff agencies, stores verified notices in D1, writes CSV/JSON/GeoJSON artifacts to R2, and renders an expandable map for coworker commute delay planning.",
+      "category": "public notice aggregation, commute planning, jurisdiction mapping, scheduled data pipeline",
+      "primary_users": [
+        "local workers commuting during high-traffic weekend windows",
+        "restaurant managers coordinating employee arrival times",
+        "dispatchers or team leads planning route timing",
+        "local drivers reviewing public notices",
+        "operators maintaining zip-to-agency source mappings",
+        "future users in any zip code covered by configured jurisdiction sources"
+      ],
+      "primary_jobs_to_be_done": [
+        "Set one or more zip codes and automatically determine which agencies are responsible for checkpoint announcements.",
+        "Handle zip codes that map to one agency, bundled agency groups, or multiple agencies based on city boundary or service area.",
+        "Fetch public checkpoint notices from official and reputable public sources on a configurable schedule.",
+        "Normalize source records into checkpoint notices with source confidence and delay-risk classification.",
+        "Generate CSV, JSON, and GeoJSON artifacts from D1 so the data can be downloaded, shared, or reused.",
+        "Render an expandable map-first interface that is easy to see on mobile, tablet, or desktop.",
+        "Preserve safety boundaries: support public-notice delay planning, not impaired-driving or active evasion."
+      ],
+      "operating_boundary": {
+        "allowed_use": "Public-notice aggregation, commute-delay planning, staffing logistics, safer ride planning, source verification, and historical traffic-friction analysis.",
+        "not_allowed_use": "Helping impaired drivers avoid enforcement, live evasion of law enforcement, defeating checkpoint operations, or encouraging illegal behavior.",
+        "safe_default": "Show source links, confidence, approximate timing, delay risk, and safety reminders. Avoid tactical evasion language and never provide instructions for impaired driving."
+      }
+    },
+    "core_loop": [
+      "Admin sets target zip codes and review area preferences.",
+      "System resolves each zip into one or more jurisdiction profiles: city police, county sheriff, CHP, neighboring city agency, or shared service area.",
+      "Cron fires at configured local update times and creates source-check jobs.",
+      "Worker fetches public pages/feeds and queues parsing jobs.",
+      "Parser extracts candidate notices and stores source captures in R2.",
+      "Normalizer writes candidate notices to D1 with source confidence, jurisdiction, time window, corridor, and review state.",
+      "Admin reviews uncertain candidates and edits intersection/coordinate fields when needed.",
+      "Exporter generates CSV, JSON, and GeoJSON snapshots from D1 into R2.",
+      "Map dashboard loads /api/checkpoints or latest GeoJSON and renders full-screen markers, cards, filters, and coworker brief."
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="prd-spec">
+  {
+    "problem": "Checkpoint announcements are distributed across official newsroom pages, public agency social media, local news reposts, and third-party trackers. Their coverage depends on jurisdiction, and zip codes do not map cleanly to one agency. A worker who only knows a zip code needs a system that can resolve the responsible agencies, check the right public sources, and create a reliable commuter delay board without manual CSV upkeep.",
+    "solution": "Checkpoint Cloud combines a zip-jurisdiction registry, configurable Cloudflare Cron schedules, source ingestion Workers, D1 canonical storage, R2 artifact snapshots, and an expandable HTML/SVG map dashboard. It turns public notices into structured commuter-delay awareness and exports CSV/JSON/GeoJSON automatically.",
+    "differentiator": "The jurisdiction layer is first-class. The app does not assume one zip equals one agency; it supports bundled zips, split zips, overlapping agencies, confidence levels, and human review for ambiguous boundaries.",
+    "mvp_goals": [
+      "Create this HTML.spec as visual prototype and machine-readable build contract.",
+      "Add dashboard controls for target zip codes, jurisdiction profiles, source URLs, and update schedule.",
+      "Define D1 schema for zip areas, agencies, source feeds, source captures, checkpoint notices, generated artifacts, and audit events.",
+      "Define Cron-triggered Worker flow for daily or custom scheduled checks.",
+      "Define CSV/JSON/GeoJSON artifact generation and R2 snapshot paths.",
+      "Render expandable map UI with full-screen map mode, table mode, split mode, and print coworker brief.",
+      "Add safety and review gates for uncertain or low-confidence notices."
+    ],
+    "non_goals_v1": [
+      "Live GPS tracking",
+      "Real-time police movement tracking",
+      "Routing instructions for impaired drivers",
+      "Automatic publication of unverified rumors",
+      "Perfect GIS boundary accuracy",
+      "Legal advice",
+      "Full multi-state legal jurisdiction model",
+      "Scraping sources that disallow automated access"
+    ],
+    "success_metrics": [
+      "Admin can add a zip code and see candidate responsible agencies.",
+      "Admin can represent one-to-one, one-to-many, many-to-one, and split-jurisdiction zip mappings.",
+      "Cron checks run at the configured local time or through a safe UTC translation strategy.",
+      "D1 holds canonical checkpoint notices and source/jurisdiction metadata.",
+      "R2 stores daily CSV, JSON, GeoJSON, and source-capture snapshots.",
+      "Dashboard renders latest notices and supports full-screen map view.",
+      "Every notice displays source, agency, confidence, last checked time, and safety framing."
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="zip-jurisdiction-spec">
+  {
+    "principle": "Zip code is an input hint, not the jurisdiction truth. The system must resolve zip codes to agency coverage using a configurable registry and review status.",
+    "mapping_modes": [
+      {
+        "mode": "single_agency_zip",
+        "example": "One zip is primarily served by one city police department or sheriff contract city.",
+        "resolution": "Use the primary agency profile by default."
+      },
+      {
+        "mode": "bundled_zip_group",
+        "example": "Multiple neighboring zips are covered by the same sheriff station or city police department.",
+        "resolution": "Attach all zips to one jurisdiction bundle and reuse its source feeds."
+      },
+      {
+        "mode": "split_zip",
+        "example": "One zip crosses city boundaries or service areas.",
+        "resolution": "Require corridor, city, intersection, or approximate coordinate before final agency assignment."
+      },
+      {
+        "mode": "overlap_agencies",
+        "example": "City police, county sheriff, CHP, transit police, or neighboring city agency may all announce operations affecting a commute corridor.",
+        "resolution": "Check all configured agencies and mark notice agency plus affected corridor."
+      },
+      {
+        "mode": "unknown_or_unverified",
+        "example": "Zip has no configured agency or ambiguous source coverage.",
+        "resolution": "Create review task before automated notices can be published."
+      }
+    ],
+    "registry_fields": [
+      "zip_code",
+      "city_name",
+      "county_name",
+      "state",
+      "jurisdiction_bundle_id",
+      "primary_agency_id",
+      "secondary_agency_ids",
+      "split_rules",
+      "corridor_hints",
+      "source_feed_ids",
+      "confidence",
+      "review_status",
+      "last_verified_at"
+    ],
+    "split_rules": [
+      "city boundary hint",
+      "street/corridor prefix",
+      "intersection-to-agency override",
+      "coordinate bounding polygon later",
+      "manual admin override"
+    ],
+    "safe_default": "When a zip mapping is ambiguous, collect candidate notices but label them needs_review until an admin assigns agency/corridor confidence."
+  }
+  </script>
+
+  <script type="application/json" id="schedule-spec">
+  {
+    "principle": "Cron timing must be configurable, auditable, and timezone-aware. Cloudflare cron expressions execute by UTC schedule, so local time behavior must be explicit.",
+    "default_schedule": {
+      "label": "Daily 6:00 AM Pacific source check",
+      "timezone": "America/Los_Angeles",
+      "pdt_utc_cron": "0 13 * * *",
+      "pst_utc_cron": "0 14 * * *",
+      "recommended_v1_strategy": "Run hourly between 5 AM and 8 AM Pacific and let Worker execute only when local time matches configured update window, or adjust cron seasonally."
+    },
+    "admin_settings": {
+      "update_times_local": ["06:00", "15:00", "20:00"],
+      "timezone": "America/Los_Angeles",
+      "lookahead_days": 7,
+      "refresh_frequency": "daily | twice_daily | hourly_window | manual_only | custom_cron",
+      "manual_refresh_enabled": true,
+      "late_notice_sweep_enabled": true,
+      "source_backoff_minutes": 30,
+      "max_fetches_per_run": 100
+    },
+    "cron_flow": [
+      "scheduled handler wakes on UTC cron",
+      "Worker computes current local time for workspace timezone",
+      "Worker compares local time to enabled update windows",
+      "If in window, create ingest_run record in D1",
+      "Worker enqueue source_check jobs for active zip/jurisdiction feeds",
+      "Queue consumers fetch, parse, normalize, and score records",
+      "Exporter writes latest artifacts after all jobs complete or after timeout"
+    ],
+    "manual_refresh": {
+      "route": "POST /api/admin/refresh-now",
+      "use_cases": ["late afternoon press release", "manual source correction", "pre-weekend check", "debugging source parser"],
+      "requires_auth": true
+    }
+  }
+  </script>
+
+  <script type="application/json" id="source-ingestion-spec">
+  {
+    "source_priority": [
+      {
+        "type": "official_press_release",
+        "confidence": 0.95,
+        "examples": ["OCSD Newsroom", "city police newsroom", "sheriff station press releases"],
+        "publish_rule": "auto_publish_if_parse_confident"
+      },
+      {
+        "type": "official_social",
+        "confidence": 0.88,
+        "examples": ["official agency X account", "official agency Facebook page"],
+        "publish_rule": "auto_publish_if_source_verified_and_parse_confident"
+      },
+      {
+        "type": "local_news_repost",
+        "confidence": 0.76,
+        "examples": ["Patch local", "Dana Point Times", "local newspaper reposting police press release"],
+        "publish_rule": "needs_source_link_or_review"
+      },
+      {
+        "type": "third_party_tracker",
+        "confidence": 0.62,
+        "examples": ["public checkpoint aggregation sites"],
+        "publish_rule": "needs_review_unless_confirmed_by_official_source"
+      },
+      {
+        "type": "driver_delay_flag",
+        "confidence": 0.35,
+        "examples": ["coworker notes", "delay observations after event"],
+        "publish_rule": "never_create_checkpoint_by_itself; can update delay risk only"
+      }
+    ],
+    "fetch_rules": [
+      "Respect robots.txt, source terms, rate limits, and public access boundaries.",
+      "Prefer official RSS/feed/API pages if available.",
+      "Store raw source captures in R2 for audit, but do not store unnecessary personal data.",
+      "Do not bypass login walls or scrape private/social content requiring authorization unless explicitly supported by an approved API.",
+      "Keep low-confidence candidate notices in review state."
+    ],
+    "parser_outputs": [
+      "candidate_title",
+      "agency_id",
+      "city",
+      "general_location",
+      "date",
+      "start_time",
+      "end_time",
+      "source_url",
+      "published_at",
+      "source_type",
+      "raw_excerpt",
+      "parse_confidence",
+      "needs_review_reason"
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="artifact-generation-spec">
+  {
+    "canonical_store": "Cloudflare D1",
+    "generated_artifacts": [
+      {
+        "format": "csv",
+        "path_pattern": "snapshots/{workspace_id}/{YYYY-MM-DD}/checkpoints.csv",
+        "endpoint": "/api/checkpoints.csv",
+        "purpose": "Spreadsheet download, coworker sharing, manual review, archival reporting."
+      },
+      {
+        "format": "json",
+        "path_pattern": "snapshots/{workspace_id}/{YYYY-MM-DD}/checkpoints.json",
+        "endpoint": "/api/checkpoints.json",
+        "purpose": "Frontend dashboard loading and simple API access."
+      },
+      {
+        "format": "geojson",
+        "path_pattern": "snapshots/{workspace_id}/{YYYY-MM-DD}/checkpoints.geojson",
+        "endpoint": "/api/checkpoints.geojson",
+        "purpose": "Map rendering and future GIS/Leaflet/Mapbox compatibility."
+      },
+      {
+        "format": "html",
+        "path_pattern": "snapshots/{workspace_id}/{YYYY-MM-DD}/weekend-brief.html",
+        "endpoint": "/brief/weekend",
+        "purpose": "Printable coworker delay brief with safety notes and source links."
+      }
+    ],
+    "export_flow": [
+      "Read approved and reviewable upcoming checkpoint notices from D1.",
+      "Join agencies, zip mappings, source feeds, delay flags, and coordinates.",
+      "Write CSV rows with stable column order.",
+      "Write JSON API payload for dashboard.",
+      "Write GeoJSON FeatureCollection for map clients.",
+      "Update latest_artifact pointers in D1.",
+      "Expose latest artifacts through signed or public URLs according to workspace setting."
+    ],
+    "csv_columns_v2": [
+      "notice_id",
+      "workspace_id",
+      "date",
+      "day",
+      "start_time",
+      "end_time",
+      "zip_code",
+      "city",
+      "county",
+      "general_location",
+      "intersection",
+      "corridor",
+      "latitude",
+      "longitude",
+      "agency_id",
+      "agency_name",
+      "jurisdiction_bundle_id",
+      "status",
+      "review_status",
+      "source_type",
+      "source_name",
+      "source_url",
+      "published_at",
+      "captured_at",
+      "last_checked_at",
+      "confidence_score",
+      "delay_risk",
+      "driver_flags_count",
+      "actual_delay_minutes",
+      "notes"
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="route-spec">
+  {
+    "routes": [
+      {"path":"/","name":"Dashboard","component":"DashboardPage","description":"Map/table dashboard with today, tomorrow, and weekend checkpoint notice views."},
+      {"path":"/map","name":"Expandable Map","component":"ExpandableMapPage","description":"Full-screen map mode with filters, marker cards, and split/table toggles."},
+      {"path":"/settings/zips","name":"Zip Settings","component":"ZipSettingsPage","description":"Add target zip codes and map them to jurisdiction bundles, agencies, and source feeds."},
+      {"path":"/settings/schedule","name":"Schedule Settings","component":"ScheduleSettingsPage","description":"Set local update times, timezone, refresh frequency, and manual refresh rules."},
+      {"path":"/settings/sources","name":"Source Settings","component":"SourceSettingsPage","description":"Configure official newsroom pages, agency social links, local news sources, trackers, and review rules."},
+      {"path":"/admin/review","name":"Review Queue","component":"ReviewQueuePage","description":"Review uncertain notices, split-zip matches, missing intersections, and low-confidence source matches."},
+      {"path":"/artifacts","name":"Artifacts","component":"ArtifactLibraryPage","description":"Download or inspect generated CSV, JSON, GeoJSON, and weekend brief snapshots."},
+      {"path":"/api/checkpoints","name":"Checkpoint JSON API","component":"CheckpointApi","description":"Returns current normalized checkpoint notices."},
+      {"path":"/api/checkpoints.csv","name":"Checkpoint CSV Export","component":"CheckpointCsvApi","description":"Returns latest generated CSV export."},
+      {"path":"/api/checkpoints.geojson","name":"Checkpoint GeoJSON Export","component":"CheckpointGeoJsonApi","description":"Returns latest generated GeoJSON export."},
+      {"path":"/api/admin/refresh-now","name":"Manual Refresh API","component":"ManualRefreshApi","description":"Starts an authenticated ingest run immediately."}
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="api-spec">
+  {
+    "endpoints": [
+      {"method":"GET","path":"/api/health","response_model":"HealthCheck","used_by":["DashboardPage","DeploymentMonitor"]},
+      {"method":"GET","path":"/api/settings","response_model":"WorkspaceSettings","used_by":["SettingsPages"]},
+      {"method":"PATCH","path":"/api/settings","request_model":"WorkspaceSettingsUpdate","response_model":"WorkspaceSettings","used_by":["ScheduleSettingsPage","ZipSettingsPage"]},
+      {"method":"GET","path":"/api/zips","response_model":"ZipJurisdiction[]","used_by":["ZipSettingsPage","DashboardFilters"]},
+      {"method":"POST","path":"/api/zips","request_model":"ZipJurisdictionCreate","response_model":"ZipJurisdiction","used_by":["ZipSettingsPage"]},
+      {"method":"PATCH","path":"/api/zips/:zipCode","request_model":"ZipJurisdictionUpdate","response_model":"ZipJurisdiction","used_by":["ZipSettingsPage"]},
+      {"method":"GET","path":"/api/agencies","response_model":"Agency[]","used_by":["ZipSettingsPage","SourceSettingsPage"]},
+      {"method":"POST","path":"/api/agencies","request_model":"AgencyCreate","response_model":"Agency","used_by":["SourceSettingsPage"]},
+      {"method":"GET","path":"/api/source-feeds","response_model":"SourceFeed[]","used_by":["SourceSettingsPage"]},
+      {"method":"POST","path":"/api/source-feeds","request_model":"SourceFeedCreate","response_model":"SourceFeed","used_by":["SourceSettingsPage"]},
+      {"method":"POST","path":"/api/admin/refresh-now","request_model":"ManualRefreshRequest","response_model":"IngestRun","used_by":["ScheduleSettingsPage","AdminToolbar"]},
+      {"method":"GET","path":"/api/ingest-runs","response_model":"IngestRun[]","used_by":["AdminDashboard"]},
+      {"method":"GET","path":"/api/checkpoints","query":["zip","city","agency","dateFrom","dateTo","reviewStatus","minConfidence"],"response_model":"CheckpointNotice[]","used_by":["DashboardPage","ExpandableMapPage"]},
+      {"method":"PATCH","path":"/api/checkpoints/:noticeId","request_model":"CheckpointNoticeUpdate","response_model":"CheckpointNotice","used_by":["ReviewQueuePage","NoticeEditor"]},
+      {"method":"GET","path":"/api/checkpoints.csv","response_model":"text/csv","used_by":["ArtifactLibraryPage","CsvDownloadButton"]},
+      {"method":"GET","path":"/api/checkpoints.geojson","response_model":"GeoJSONFeatureCollection","used_by":["ExpandableMapPage","MapClient"]},
+      {"method":"GET","path":"/api/artifacts","response_model":"GeneratedArtifact[]","used_by":["ArtifactLibraryPage"]}
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="model-spec">
+  {
+    "models": {
+      "WorkspaceSettings": {
+        "workspaceId": "string",
+        "displayName": "string",
+        "timezone": "string",
+        "defaultZipCodes": "string[]",
+        "updateTimesLocal": "string[]",
+        "refreshFrequency": "daily | twice_daily | hourly_window | manual_only | custom_cron",
+        "lookaheadDays": "number",
+        "manualRefreshEnabled": "boolean",
+        "artifactVisibility": "private | team_link | public_readonly",
+        "safetyMode": "strict"
+      },
+      "ZipJurisdiction": {
+        "zipCode": "string",
+        "cityName": "string",
+        "countyName": "string",
+        "state": "string",
+        "mappingMode": "single_agency_zip | bundled_zip_group | split_zip | overlap_agencies | unknown_or_unverified",
+        "jurisdictionBundleId": "string | null",
+        "primaryAgencyId": "string | null",
+        "secondaryAgencyIds": "string[]",
+        "splitRules": "SplitRule[]",
+        "corridorHints": "string[]",
+        "sourceFeedIds": "string[]",
+        "confidence": "number",
+        "reviewStatus": "approved | needs_review | rejected | stale",
+        "lastVerifiedAt": "string | null"
+      },
+      "Agency": {
+        "agencyId": "string",
+        "name": "string",
+        "type": "city_police | county_sheriff | highway_patrol | transit_police | campus_police | other",
+        "county": "string",
+        "state": "string",
+        "officialWebsite": "string | null",
+        "newsroomUrl": "string | null",
+        "socialUrls": "string[]",
+        "serviceAreaNotes": "string",
+        "active": "boolean"
+      },
+      "JurisdictionBundle": {
+        "bundleId": "string",
+        "name": "string",
+        "agencyIds": "string[]",
+        "zipCodes": "string[]",
+        "description": "string",
+        "reviewStatus": "approved | needs_review"
+      },
+      "SourceFeed": {
+        "sourceFeedId": "string",
+        "agencyId": "string | null",
+        "label": "string",
+        "sourceType": "official_press_release | official_social | local_news_repost | third_party_tracker | manual_upload",
+        "url": "string",
+        "fetchMode": "html | rss | api | manual | disabled",
+        "baseConfidence": "number",
+        "active": "boolean",
+        "lastCheckedAt": "string | null",
+        "reviewRule": "auto_if_confident | always_review | disabled"
+      },
+      "IngestRun": {
+        "ingestRunId": "string",
+        "workspaceId": "string",
+        "triggerType": "cron | manual | retry",
+        "startedAt": "string",
+        "finishedAt": "string | null",
+        "status": "queued | running | completed | completed_with_warnings | failed",
+        "sourceFeedCount": "number",
+        "candidateCount": "number",
+        "publishedCount": "number",
+        "reviewCount": "number",
+        "notes": "string | null"
+      },
+      "CheckpointNotice": {
+        "noticeId": "string",
+        "workspaceId": "string",
+        "date": "string",
+        "day": "string",
+        "startTime": "string",
+        "endTime": "string",
+        "zipCode": "string | null",
+        "city": "string",
+        "county": "string",
+        "generalLocation": "string",
+        "intersection": "string | null",
+        "corridor": "string | null",
+        "latitude": "number | null",
+        "longitude": "number | null",
+        "agencyId": "string | null",
+        "agencyName": "string",
+        "jurisdictionBundleId": "string | null",
+        "status": "scheduled | active | expired | canceled | unknown",
+        "reviewStatus": "approved | needs_review | rejected | low_confidence",
+        "sourceType": "string",
+        "sourceName": "string",
+        "sourceUrl": "string",
+        "publishedAt": "string | null",
+        "capturedAt": "string",
+        "lastCheckedAt": "string",
+        "confidenceScore": "number",
+        "delayRisk": "low | medium | high | unknown",
+        "driverFlagsCount": "number",
+        "actualDelayMinutes": "number | null",
+        "notes": "string | null"
+      },
+      "GeneratedArtifact": {
+        "artifactId": "string",
+        "workspaceId": "string",
+        "kind": "csv | json | geojson | html_brief",
+        "r2Key": "string",
+        "publicUrl": "string | null",
+        "createdAt": "string",
+        "rowCount": "number",
+        "sourceIngestRunId": "string | null",
+        "checksum": "string | null"
+      },
+      "AuditEvent": {
+        "eventId": "string",
+        "actorType": "admin | system | worker | queue | user",
+        "eventType": "zip_added | agency_added | source_checked | notice_created | notice_reviewed | artifact_generated | refresh_requested | schedule_changed",
+        "targetType": "zip | agency | source_feed | checkpoint_notice | artifact | settings",
+        "targetId": "string",
+        "timestamp": "string",
+        "notes": "string | null"
+      }
+    }
+  }
+  </script>
+
+  <script type="application/json" id="cloudflare-spec">
+  {
+    "infrastructure": {
+      "worker": {
+        "name": "checkpoint-cloud",
+        "purpose": "Dashboard API, admin settings, checkpoint notice queries, artifact endpoints, scheduled ingestion coordinator, and manual refresh endpoint."
+      },
+      "scheduled_worker_handler": {
+        "entrypoint": "export default { fetch, scheduled, queue }",
+        "purpose": "Use scheduled() for Cron, fetch() for HTTP/API/UI, and queue() for parsing/normalization jobs."
+      },
+      "d1": {
+        "database_name": "checkpoint_cloud_db",
+        "purpose": "Canonical storage for settings, zips, agencies, sources, notices, ingest runs, artifacts, and audit events."
+      },
+      "r2": {
+        "bucket_name": "checkpoint-cloud-artifacts",
+        "purpose": "Daily CSV/JSON/GeoJSON/HTML brief snapshots plus raw source captures for audit."
+      },
+      "queues": {
+        "queue_name": "checkpoint-cloud-ingest",
+        "purpose": "Fetch and parse source feeds without overloading a scheduled event or single HTTP request."
+      },
+      "cron": {
+        "default": "0 13 * * * during PDT or local-time-gated hourly window",
+        "purpose": "Trigger scheduled source checks and artifact regeneration."
+      },
+      "access": {
+        "recommended": "Cloudflare Access or equivalent auth for admin settings, manual refresh, and review queue."
+      }
+    },
+    "d1_tables": [
+      "workspace_settings",
+      "zip_jurisdictions",
+      "agencies",
+      "jurisdiction_bundles",
+      "source_feeds",
+      "source_captures",
+      "ingest_runs",
+      "checkpoint_notices",
+      "notice_sources",
+      "driver_delay_flags",
+      "generated_artifacts",
+      "audit_events"
+    ],
+    "wrangler_toml_example": "name = \"checkpoint-cloud\"\nmain = \"src/index.ts\"\ncompatibility_date = \"2026-05-22\"\n\n[triggers]\ncrons = [\"0 * * * *\"] # hourly local-time gated; Worker checks configured update windows\n\n[[d1_databases]]\nbinding = \"DB\"\ndatabase_name = \"checkpoint_cloud_db\"\ndatabase_id = \"YOUR_D1_DATABASE_ID\"\n\n[[r2_buckets]]\nbinding = \"ARTIFACTS\"\nbucket_name = \"checkpoint-cloud-artifacts\"\n\n[[queues.producers]]\nbinding = \"INGEST_QUEUE\"\nqueue = \"checkpoint-cloud-ingest\"\n\n[[queues.consumers]]\nqueue = \"checkpoint-cloud-ingest\"",
+    "first_deployment_rule": "Deploy admin-authenticated first. Public/team read-only dashboard can come after source confidence, review states, and safety language are working."
+  }
+  </script>
+
+  <script type="application/json" id="map-ui-spec">
+  {
+    "display_modes": ["split_view", "fullscreen_map", "table_only", "print_brief", "mobile_card_stack"],
+    "map_behavior": [
+      "Map panel has an expand button that turns the SVG/map into a full viewport overlay.",
+      "Sidebar can collapse to leave more room for the map.",
+      "Notice cards highlight corresponding map markers on hover/click.",
+      "Filters can narrow by zip, city, agency, date, source type, confidence, and delay risk.",
+      "Missing coordinates show in review list instead of silently disappearing.",
+      "GeoJSON export supports future replacement of SVG with Leaflet or Mapbox."
+    ],
+    "dashboard_widgets": [
+      "Upcoming weekend notices",
+      "Zip coverage health",
+      "Ingest schedule status",
+      "Latest artifact exports",
+      "Review queue count",
+      "Source confidence breakdown",
+      "High-delay corridors"
+    ],
+    "admin_controls": [
+      "Add zip code",
+      "Select jurisdiction mapping mode",
+      "Attach agency and source feeds",
+      "Set update times",
+      "Run manual refresh now",
+      "Generate artifacts now",
+      "Approve or reject candidate notice",
+      "Edit intersection and coordinates"
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="safety-policy-spec">
+  {
+    "principle": "This product is for public-notice awareness and commute planning. It must not become a tool for impaired-driving or law-enforcement evasion.",
+    "allowed_copy": [
+      "Plan for delays.",
+      "Leave earlier or use a sober ride.",
+      "Review public source links.",
+      "Coordinate staffing around traffic friction.",
+      "Use confidence score and review status before relying on a notice."
+    ],
+    "disallowed_copy": [
+      "Avoid getting caught.",
+      "How to bypass police.",
+      "Live evasion routing.",
+      "Drive after drinking if route looks clear.",
+      "Use driver flags as proof of current enforcement location."
+    ],
+    "ui_requirements": [
+      "Every map and notice page includes a safety reminder.",
+      "Driver flags can adjust delay risk but cannot create official checkpoint notices by themselves.",
+      "Low-confidence third-party items must display source uncertainty.",
+      "Official notices link back to source."
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="roadmap-spec">
+  {
+    "phases": [
+      {"phase":1,"name":"HTML Spec and Static Dashboard","tasks":["Create this spec","Build static dashboard UI","Render mock SVG map","Add zip settings mock","Add schedule settings mock","Define data models and Cloudflare architecture"]},
+      {"phase":2,"name":"D1 Canonical Store","tasks":["Create D1 schema","Add CRUD APIs for settings, zips, agencies, source feeds, and notices","Add seed data for Orange County test zips","Add review-status workflow"]},
+      {"phase":3,"name":"Cron and Queue Ingestion","tasks":["Add scheduled() handler","Add local-time gate","Queue source checks","Fetch public sources","Store source captures in R2","Normalize candidate notices"]},
+      {"phase":4,"name":"Artifact Generation","tasks":["Generate CSV from D1","Generate JSON payload","Generate GeoJSON FeatureCollection","Write snapshots to R2","Expose latest artifact endpoints"]},
+      {"phase":5,"name":"Expandable Map and Team Brief","tasks":["Full-screen map overlay","Filter sidebar","Notice-card marker sync","Printable coworker brief","Mobile PWA polish"]},
+      {"phase":6,"name":"Scaling Zip Coverage","tasks":["Agency registry editor","Bundled zip rules","Split-zip/corridor overrides","Source confidence tuning","Multi-county workspace support"]}
+    ]
+  }
+  </script>
+
+  <script type="application/json" id="agents-spec">
+  {
+    "source_of_truth": "This HTML file is the canonical visual and semantic contract for Checkpoint Cloud v0.2.",
+    "agent_roles": {
+      "Alice": ["Create repo scaffold", "Extract README, AGENTS, PRD, ROADMAP, SCHEMA, SAFETY, and CLOUDFLARE docs", "Build static UI", "Preserve embedded JSON specs"],
+      "Claude": ["Build Cloudflare Worker", "Create D1 schema", "Wire R2 artifact storage", "Implement Cron scheduled handler", "Implement Queue consumer", "Generate CSV/JSON/GeoJSON exports"],
+      "ChatGPT": ["Maintain architecture", "Review safety boundaries", "Generate schema/API docs", "Help design zip jurisdiction model"],
+      "ReviewAgent": ["Review candidate notices", "Flag low-confidence sources", "Suggest jurisdiction corrections", "Detect missing coordinates or ambiguous split-zip mappings"]
+    },
+    "extraction_order": ["Read #app-spec", "Read #prd-spec", "Read #zip-jurisdiction-spec", "Read #schedule-spec", "Read #source-ingestion-spec", "Read #artifact-generation-spec", "Read #route-spec", "Read #api-spec", "Read #model-spec", "Read #cloudflare-spec", "Read #map-ui-spec", "Read #safety-policy-spec", "Read #roadmap-spec", "Use data-spec-component attributes as component boundaries"],
+    "recommended_repo_files": [
+      "README.md",
+      "AGENTS.md",
+      "PRD.md",
+      "ROADMAP.md",
+      "SAFETY.md",
+      "CLOUDFLARE.md",
+      "JURISDICTION_MODEL.md",
+      "ARTIFACTS.md",
+      "specs/checkpoint-cloud.spec.html",
+      "schemas/checkpoint-notice.schema.json",
+      "schemas/zip-jurisdiction.schema.json",
+      "schemas/source-feed.schema.json",
+      "schemas/generated-artifact.schema.json",
+      "worker/src/index.ts",
+      "worker/src/scheduled.ts",
+      "worker/src/queue.ts",
+      "worker/src/exporters/csv.ts",
+      "worker/src/exporters/geojson.ts",
+      "worker/migrations/0001_init.sql",
+      "public/index.html",
+      "public/app.js",
+      "public/styles.css"
+    ],
+    "implementation_rules": [
+      "D1 is canonical; CSV is generated, not manually maintained.",
+      "Zip code is an input hint; jurisdiction mapping needs confidence and review state.",
+      "Use scheduled Cron plus local-time gating for timezone correctness.",
+      "Store source captures and generated artifacts in R2.",
+      "Use Queues for fetch/parse/normalize jobs.",
+      "Never publish driver-flag-only rumors as checkpoint notices.",
+      "Keep admin settings authenticated.",
+      "Preserve safety-first copy and boundaries."
+    ]
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #071019;
+      --panel: rgba(255,255,255,0.065);
+      --panel-2: rgba(255,255,255,0.105);
+      --border: rgba(255,255,255,0.13);
+      --text: #f7fbff;
+      --soft: #dce9f7;
+      --muted: #98abc0;
+      --cyan: #5ee4ff;
+      --blue: #79a7ff;
+      --green: #47f0a4;
+      --yellow: #ffd166;
+      --orange: #ffad5a;
+      --red: #ff6b6b;
+      --purple: #c39bff;
+      --shadow: 0 24px 80px rgba(0,0,0,0.38);
+      --radius: 24px;
+      --radius-sm: 16px;
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(94,228,255,0.18), transparent 30%),
+        radial-gradient(circle at 88% 10%, rgba(121,167,255,0.18), transparent 30%),
+        radial-gradient(circle at 50% 100%, rgba(71,240,164,0.10), transparent 36%),
+        var(--bg);
+    }
+    a { color: inherit; }
+    .app { width: min(1280px, calc(100% - 32px)); margin: 0 auto; padding: 26px 0 58px; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:28px; }
+    .brand { display:flex; align-items:center; gap:14px; }
+    .logo { width:50px; height:50px; display:grid; place-items:center; border-radius:18px; font-weight:950; color:#031018; background:linear-gradient(135deg,var(--cyan),var(--green),var(--blue)); box-shadow:0 18px 58px rgba(94,228,255,0.18); }
+    .brand strong { display:block; font-size:18px; letter-spacing:-0.04em; }
+    .brand span { display:block; color:var(--muted); font-size:12px; }
+    .nav { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+    .nav a, .button { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; border:1px solid var(--border); border-radius:999px; padding:10px 14px; background:rgba(255,255,255,0.055); color:var(--soft); font-size:13px; font-weight:850; }
+    .button.primary { color:#031018; background:linear-gradient(135deg,var(--cyan),var(--green)); border:none; }
+    .hero { display:grid; grid-template-columns:minmax(0,1.18fr) minmax(340px,0.82fr); gap:22px; margin-bottom:22px; }
+    .card { border:1px solid var(--border); border-radius:var(--radius); background:linear-gradient(180deg,var(--panel-2),var(--panel)); box-shadow:var(--shadow); overflow:hidden; }
+    .section, .snapshot { padding:24px; }
+    .hero-main { padding:clamp(30px,5vw,56px); }
+    .eyebrow { color:var(--cyan); font-size:12px; text-transform:uppercase; letter-spacing:0.16em; font-weight:950; margin-bottom:14px; }
+    h1 { margin:0; font-size:clamp(42px,6.8vw,82px); line-height:0.9; letter-spacing:-0.08em; }
+    h2, h3 { margin:0; letter-spacing:-0.052em; }
+    .hero-main p, .hint, .muted, .item span, .status span, .notice span, .setting span, .artifact span { color:var(--muted); line-height:1.58; }
+    .hero-main p { font-size:17px; max-width:790px; margin:24px 0 0; }
+    .hero-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:28px; }
+    .grid { display:grid; gap:22px; }
+    .two { grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:22px; }
+    .three { grid-template-columns:repeat(3,minmax(0,1fr)); margin-bottom:22px; }
+    .main-grid { grid-template-columns:minmax(0,1.08fr) minmax(340px,0.92fr); margin-bottom:22px; }
+    .section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+    .pill { display:inline-flex; width:fit-content; border-radius:999px; padding:7px 10px; font-size:12px; font-weight:850; background:rgba(255,255,255,0.075); color:var(--soft); }
+    .pill.green{background:rgba(71,240,164,0.12); color:var(--green)} .pill.blue{background:rgba(121,167,255,0.13); color:var(--blue)} .pill.yellow{background:rgba(255,209,102,0.13); color:var(--yellow)} .pill.red{background:rgba(255,107,107,0.13); color:var(--red)} .pill.cyan{background:rgba(94,228,255,0.13); color:var(--cyan)} .pill.orange{background:rgba(255,173,90,0.13); color:var(--orange)} .pill.purple{background:rgba(195,155,255,0.13); color:var(--purple)}
+    .status-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .status, .item, .notice, .setting, .artifact, .mode, .source, .zip-card { padding:14px; border:1px solid rgba(255,255,255,0.087); border-radius:var(--radius-sm); background:rgba(255,255,255,0.04); }
+    .status strong { display:block; margin-top:5px; font-size:22px; letter-spacing:-0.05em; }
+    .list { display:grid; gap:12px; }
+    .map-shell { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:14px; min-height:430px; }
+    .map-canvas { position:relative; min-height:430px; border:1px solid rgba(255,255,255,0.10); border-radius:20px; background:radial-gradient(circle at 30% 20%, rgba(94,228,255,0.1), transparent 28%), rgba(0,0,0,0.20); overflow:hidden; }
+    .map-toolbar { position:absolute; top:12px; left:12px; right:12px; z-index:2; display:flex; gap:8px; flex-wrap:wrap; justify-content:space-between; align-items:center; }
+    .map-toolbar .button { padding:8px 11px; font-size:12px; backdrop-filter: blur(8px); }
+    svg { width:100%; height:100%; min-height:430px; display:block; }
+    .marker { filter: drop-shadow(0 10px 16px rgba(0,0,0,0.38)); }
+    .map-side { display:grid; gap:10px; align-content:start; }
+    .notice strong, .setting strong, .artifact strong, .mode strong, .source strong, .zip-card strong { display:block; margin-bottom:5px; }
+    .controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .field { padding:12px; border-radius:16px; border:1px solid rgba(255,255,255,0.09); background:rgba(0,0,0,0.16); }
+    .field label { display:block; color:var(--muted); font-size:12px; margin-bottom:7px; }
+    .field input, .field select { width:100%; border:1px solid rgba(255,255,255,0.14); border-radius:12px; padding:10px 11px; background:rgba(255,255,255,0.07); color:var(--text); outline:none; }
+    .timeline { display:grid; gap:10px; }
+    .step { display:grid; grid-template-columns:44px 1fr; gap:13px; align-items:start; padding:14px; border:1px solid rgba(255,255,255,0.085); border-radius:var(--radius-sm); background:rgba(255,255,255,0.04); }
+    .num { width:44px; height:44px; display:grid; place-items:center; border-radius:15px; background:rgba(94,228,255,0.13); color:var(--cyan); font-weight:950; }
+    code { color:var(--cyan); font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:12px; }
+    .command pre { overflow-x:auto; margin:0; padding:18px; border-radius:16px; background:rgba(0,0,0,0.27); color:var(--soft); line-height:1.55; font-size:13px; }
+    .spec-note { padding:18px 20px; border:1px dashed rgba(255,255,255,0.22); border-radius:var(--radius); background:rgba(255,255,255,0.035); color:var(--muted); font-size:13px; line-height:1.6; }
+    .wide { margin-bottom:22px; }
+    @media (max-width:1040px){ .hero,.two,.three,.main-grid,.map-shell{grid-template-columns:1fr} }
+    @media (max-width:660px){ .app{width:min(100% - 22px,1280px); padding-top:18px}.topbar{align-items:flex-start; flex-direction:column}.nav{justify-content:flex-start}.status-grid,.controls{grid-template-columns:1fr}.hero-main,.section,.snapshot{padding:20px}.step{grid-template-columns:1fr} h1{font-size:42px} }
+  </style>
+</head>
+<body data-spec-document="CheckpointCloudSpec" data-spec-level="2" data-spec-source-of-truth="html">
+  <div class="app" data-spec-component="AppShell" data-spec-description="Checkpoint Cloud visual prototype and embedded machine-readable build contract.">
+    <header class="topbar" data-spec-component="TopNavigation" data-spec-source="#route-spec">
+      <div class="brand">
+        <div class="logo">CC</div>
+        <div><strong>Checkpoint Cloud</strong><span>Scheduled public notice + zip jurisdiction map</span></div>
+      </div>
+      <nav class="nav" aria-label="Primary">
+        <a href="#map">Map</a>
+        <a href="#zip-settings">Zip Settings</a>
+        <a href="#schedule">Cron</a>
+        <a href="#pipeline">Pipeline</a>
+        <a href="#artifacts">Artifacts</a>
+        <a href="#cloudflare">Cloudflare</a>
+        <a class="button primary" href="#build">Build Contract</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <article class="card hero-main" data-spec-component="HeroPanel" data-spec-source="#app-spec">
+          <div class="eyebrow">Cloudflare-native checkpoint notice system</div>
+          <h1>Zip-aware checkpoint data, refreshed on schedule.</h1>
+          <p>
+            This spec turns your map into a real pipeline: set zip codes, resolve police/sheriff/CHP source responsibility,
+            check public notices by Cron, store canonical records in D1, generate CSV/JSON/GeoJSON artifacts into R2,
+            and display an expandable map for coworker commute delay planning.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#zip-settings">Configure zip coverage</a>
+            <a class="button" href="#schedule">Set update times</a>
+            <a class="button" href="#map">Open map UI</a>
+          </div>
+        </article>
+        <aside class="card snapshot" data-spec-component="OperationsSnapshotCard" data-spec-model="WorkspaceSettings">
+          <div><span class="pill cyan">Ops Snapshot</span><h2>Automate the CSV, don’t babysit it.</h2><p>The CSV becomes a generated artifact. D1 is the live source of truth; R2 stores timestamped exports and source captures.</p></div>
+          <div class="status-grid">
+            <div class="status"><span>Target Zips</span><strong>7</strong></div>
+            <div class="status"><span>Agencies</span><strong>4</strong></div>
+            <div class="status"><span>Next Check</span><strong>6 AM</strong></div>
+            <div class="status"><span>Review Queue</span><strong>3</strong></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="card section wide" id="map" data-spec-component="ExpandableMapPanel" data-spec-source="#map-ui-spec">
+        <div class="section-head"><div><h3>Expandable Map Dashboard</h3><p class="hint">The map should be easy to see: split view, full-screen map, table-only, print brief, and mobile card stack.</p></div><span class="pill green">Map-first UI</span></div>
+        <div class="map-shell">
+          <div class="map-canvas" data-spec-component="StaticSvgMapCanvas">
+            <div class="map-toolbar"><span class="pill cyan">Split View</span><div><a class="button" href="#">Expand Map</a> <a class="button" href="#">Table Only</a> <a class="button" href="#">Print Brief</a></div></div>
+            <svg viewBox="0 0 900 520" role="img" aria-label="Mock Orange County corridor map with checkpoint delay markers">
+              <defs><linearGradient id="road" x1="0" x2="1"><stop offset="0" stop-color="rgba(94,228,255,0.45)"/><stop offset="1" stop-color="rgba(71,240,164,0.45)"/></linearGradient></defs>
+              <path d="M115 455 C200 365 250 280 300 210 C360 130 430 90 520 80 C640 65 740 95 815 150" fill="none" stroke="url(#road)" stroke-width="20" stroke-linecap="round" opacity="0.72"/>
+              <path d="M185 80 C250 165 330 230 455 280 C575 330 680 385 775 455" fill="none" stroke="rgba(121,167,255,0.40)" stroke-width="15" stroke-linecap="round"/>
+              <path d="M105 250 C230 245 355 250 480 240 C600 230 700 215 820 210" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="10" stroke-linecap="round"/>
+              <text x="92" y="482" fill="#98abc0" font-size="20">Coastal / PCH</text>
+              <text x="655" y="482" fill="#98abc0" font-size="20">I-5 / Inland</text>
+              <text x="730" y="142" fill="#98abc0" font-size="18">OCSD</text>
+              <text x="155" y="76" fill="#98abc0" font-size="18">City PD</text>
+              <g class="marker"><circle cx="265" cy="285" r="18" fill="#ff6b6b"/><circle cx="265" cy="285" r="28" fill="none" stroke="#ff6b6b" opacity="0.32" stroke-width="8"/><text x="294" y="292" fill="#f7fbff" font-size="18">High delay</text></g>
+              <g class="marker"><circle cx="520" cy="239" r="15" fill="#ffd166"/><text x="545" y="246" fill="#f7fbff" font-size="18">Review</text></g>
+              <g class="marker"><circle cx="690" cy="410" r="14" fill="#47f0a4"/><text x="714" y="416" fill="#f7fbff" font-size="18">Official</text></g>
+              <g opacity="0.28"><circle cx="95" cy="75" r="58" fill="#5ee4ff"/><circle cx="820" cy="85" r="42" fill="#79a7ff"/><circle cx="790" cy="440" r="60" fill="#47f0a4"/></g>
+            </svg>
+          </div>
+          <aside class="map-side" data-spec-component="NoticeCardStack">
+            <div class="notice"><span class="pill red">High</span><strong>Dana Point / PCH corridor</strong><span>Official/source-linked notice. Delay planning window: Friday evening. Intersection needs coordinate confirmation.</span></div>
+            <div class="notice"><span class="pill yellow">Needs Review</span><strong>Split-zip candidate</strong><span>Zip crosses coverage area. Require corridor or intersection before final agency assignment.</span></div>
+            <div class="notice"><span class="pill green">Approved</span><strong>Bundled OCSD zips</strong><span>Multiple zips share one sheriff station source bundle. CSV/GeoJSON export ready.</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="grid two">
+        <article class="card section" id="zip-settings" data-spec-component="ZipJurisdictionSettingsPanel" data-spec-source="#zip-jurisdiction-spec">
+          <div class="section-head"><div><h3>Zip Code + Jurisdiction Settings</h3><p class="hint">Zip code starts the search, but agency coverage decides which sources to check.</p></div><span class="pill blue">Jurisdiction Layer</span></div>
+          <div class="controls">
+            <div class="field"><label>Target zip code</label><input value="92675" aria-label="Target zip code" /></div>
+            <div class="field"><label>Mapping mode</label><select><option>single_agency_zip</option><option>bundled_zip_group</option><option>split_zip</option><option>overlap_agencies</option></select></div>
+            <div class="field"><label>Primary agency</label><select><option>Orange County Sheriff's Department</option><option>City Police Department</option><option>CHP</option></select></div>
+            <div class="field"><label>Review status</label><select><option>needs_review</option><option>approved</option><option>stale</option></select></div>
+          </div>
+          <div class="list" style="margin-top:12px">
+            <div class="zip-card"><strong>Bundled zip group</strong><span>Use when several zips share the same sheriff station, police department, or source-feed bundle.</span></div>
+            <div class="zip-card"><strong>Split zip</strong><span>Use when the same zip can involve different agencies depending on city boundary, corridor, intersection, or coordinates.</span></div>
+            <div class="zip-card"><strong>Overlap agencies</strong><span>Use when city police, sheriff, CHP, or nearby agencies can all affect the commute corridor.</span></div>
+          </div>
+        </article>
+
+        <article class="card section" id="schedule" data-spec-component="ScheduleSettingsPanel" data-spec-source="#schedule-spec">
+          <div class="section-head"><div><h3>Cron + Timing Controls</h3><p class="hint">Let the dashboard check every day at 6 AM, then add afternoon/evening sweeps for late announcements.</p></div><span class="pill cyan">Configurable</span></div>
+          <div class="controls">
+            <div class="field"><label>Timezone</label><input value="America/Los_Angeles" /></div>
+            <div class="field"><label>Primary check time</label><input value="06:00" /></div>
+            <div class="field"><label>Late sweep</label><select><option>15:00 enabled</option><option>disabled</option></select></div>
+            <div class="field"><label>Refresh mode</label><select><option>hourly_window_local_gate</option><option>daily</option><option>custom_cron</option><option>manual_only</option></select></div>
+          </div>
+          <div class="list" style="margin-top:12px">
+            <div class="setting"><strong><code>0 * * * *</code> local-time gated</strong><span>Recommended v1: run hourly and let the Worker execute only during configured local update windows.</span></div>
+            <div class="setting"><strong>Manual Refresh Now</strong><span>Admin button for late press releases, pre-weekend checks, and parser debugging.</span></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="grid main-grid">
+        <article class="card section" id="pipeline" data-spec-component="IngestionPipelinePanel" data-spec-source="#source-ingestion-spec">
+          <div class="section-head"><div><h3>Scheduled Ingestion Pipeline</h3><p class="hint">A safe Cloudflare flow from public source monitoring to normalized checkpoint notice rows.</p></div><span class="pill purple">Worker + Queue</span></div>
+          <div class="timeline">
+            <div class="step"><div class="num">1</div><div><strong>Cron wakes Worker</strong><span class="muted">Scheduled handler checks local update windows and creates an ingest_run record.</span></div></div>
+            <div class="step"><div class="num">2</div><div><strong>Resolve zip coverage</strong><span class="muted">D1 returns active zip jurisdiction bundles, agencies, and source feeds.</span></div></div>
+            <div class="step"><div class="num">3</div><div><strong>Queue source jobs</strong><span class="muted">Each official/news/tracker source is fetched and captured without overloading Cron.</span></div></div>
+            <div class="step"><div class="num">4</div><div><strong>Parse and normalize</strong><span class="muted">Candidate notices become D1 rows with confidence, review status, agency, date, corridor, and location.</span></div></div>
+            <div class="step"><div class="num">5</div><div><strong>Generate artifacts</strong><span class="muted">CSV, JSON, GeoJSON, and HTML brief snapshots are written to R2.</span></div></div>
+          </div>
+        </article>
+        <aside class="grid">
+          <article class="card section" data-spec-component="SourceConfidencePanel" data-spec-source="#source-ingestion-spec">
+            <div class="section-head"><div><h3>Source Confidence</h3><p class="hint">Official sources can publish faster; third-party and driver flags need review.</p></div></div>
+            <div class="list">
+              <div class="source"><span class="pill green">0.95</span><strong>Official press release</strong><span>Agency newsroom/source page.</span></div>
+              <div class="source"><span class="pill blue">0.88</span><strong>Official social</strong><span>Verified agency page or account.</span></div>
+              <div class="source"><span class="pill yellow">0.76</span><strong>Local news repost</strong><span>Useful when linked back to official source.</span></div>
+              <div class="source"><span class="pill orange">0.62</span><strong>Third-party tracker</strong><span>Review unless confirmed elsewhere.</span></div>
+            </div>
+          </article>
+          <article class="card section" data-spec-component="SafetyPanel" data-spec-source="#safety-policy-spec">
+            <div class="section-head"><div><h3>Safety Boundary</h3><p class="hint">This stays focused on public-notice delay planning and safe ride choices.</p></div><span class="pill red">Strict</span></div>
+            <div class="list"><div class="item"><strong>Driver flags do not create notices</strong><span>They can update delay risk after review, but they cannot become law-enforcement location claims by themselves.</span></div><div class="item"><strong>Every view includes safety copy</strong><span>Leave earlier, plan sober rides, and check source confidence before relying on any notice.</span></div></div>
+          </article>
+        </aside>
+      </section>
+
+      <section class="grid two">
+        <article class="card section" id="artifacts" data-spec-component="ArtifactGenerationPanel" data-spec-source="#artifact-generation-spec">
+          <div class="section-head"><div><h3>CSV / JSON / GeoJSON Artifacts</h3><p class="hint">D1 is canonical. CSV is regenerated from D1 and stored in R2 every run.</p></div><span class="pill green">Generated</span></div>
+          <div class="list">
+            <div class="artifact"><strong><code>/api/checkpoints.csv</code></strong><span>Spreadsheet-compatible export with zip, agency, source, confidence, timing, intersection, and delay risk.</span></div>
+            <div class="artifact"><strong><code>/api/checkpoints.json</code></strong><span>Dashboard/API payload for cards, filters, and table views.</span></div>
+            <div class="artifact"><strong><code>/api/checkpoints.geojson</code></strong><span>Future-ready map export for Leaflet/Mapbox/GIS clients.</span></div>
+            <div class="artifact"><strong><code>/brief/weekend</code></strong><span>Printable coworker brief with safety reminders and source links.</span></div>
+          </div>
+        </article>
+        <article class="card section" id="cloudflare" data-spec-component="CloudflareArchitecturePanel" data-spec-source="#cloudflare-spec">
+          <div class="section-head"><div><h3>Cloudflare Architecture</h3><p class="hint">Workers orchestrate; Queues parse; D1 stores truth; R2 stores artifacts.</p></div><span class="pill blue">Cloudflare</span></div>
+          <div class="list">
+            <div class="item"><strong>Worker</strong><span>Routes, API, admin actions, scheduled handler, artifact endpoints.</span></div>
+            <div class="item"><strong>D1</strong><span>Settings, zip jurisdictions, agencies, sources, notices, ingest runs, artifacts, audit.</span></div>
+            <div class="item"><strong>R2</strong><span>Daily CSV/JSON/GeoJSON snapshots and source captures.</span></div>
+            <div class="item"><strong>Queues</strong><span>Reliable fetch/parse/normalize jobs outside the Cron invocation.</span></div>
+            <div class="item"><strong>Cron</strong><span>Hourly local-time gate or direct UTC schedule for update windows.</span></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="grid two">
+        <article class="card section command" id="build" data-spec-component="BuildContractPanel" data-spec-source="#agents-spec">
+          <div class="section-head"><div><h3>Agent Build Contract</h3><p class="hint">Paste-ready instructions for Alice, Claude, Cursor, or another builder agent.</p></div><span class="pill green">Buildable</span></div>
+          <pre>Build Checkpoint Cloud from this HTML spec.
+
+Extraction order:
+1. Read #app-spec.
+2. Read #prd-spec.
+3. Read #zip-jurisdiction-spec.
+4. Read #schedule-spec.
+5. Read #source-ingestion-spec.
+6. Read #artifact-generation-spec.
+7. Read #route-spec.
+8. Read #api-spec.
+9. Read #model-spec.
+10. Read #cloudflare-spec.
+11. Read #map-ui-spec.
+12. Read #safety-policy-spec.
+13. Read #roadmap-spec.
+14. Use data-spec-component attributes as component boundaries.
+
+First deliverable:
+- Static dashboard with expandable SVG map
+- Zip jurisdiction settings UI
+- Cron schedule settings UI
+- Source confidence panel
+- Artifact library mock
+- D1 schema and Worker route stubs
+- CSV/JSON/GeoJSON exporter stubs
+
+Rules:
+- D1 is canonical; CSV is generated.
+- Zip code is not jurisdiction truth; keep mapping confidence/review state.
+- Use Cloudflare Cron + local-time gating.
+- Use R2 for artifacts and source captures.
+- Use Queues for source fetch/parse jobs.
+- Preserve safety-first public-notice framing.</pre>
+        </article>
+        <article class="card section" data-spec-component="MvpBoundaryPanel" data-spec-source="#roadmap-spec">
+          <div class="section-head"><div><h3>MVP Boundary</h3><p class="hint">Start with one region and a small set of official sources, then scale zip coverage.</p></div><span class="pill orange">V0.2</span></div>
+          <div class="list">
+            <div class="mode"><strong>First geography</strong><span>Orange County / South OC test area with manually verified zip jurisdiction mappings.</span></div>
+            <div class="mode"><strong>First automation</strong><span>Daily 6 AM check plus manual refresh and optional late afternoon sweep.</span></div>
+            <div class="mode"><strong>First map</strong><span>Static SVG map with expandable full-screen mode; GeoJSON ready for real map later.</span></div>
+            <div class="mode"><strong>First safety gate</strong><span>No unverified driver flags as notices; source confidence and review state visible everywhere.</span></div>
+          </div>
+        </article>
+      </section>
+
+      <footer class="spec-note" data-spec-component="SpecFooter">
+        <strong>Spec note:</strong> This file is both the visual prototype and machine-readable build contract for a Cloudflare-native checkpoint public-notice board. Preserve the central architecture: zip-code settings resolve jurisdiction/source responsibility; Cron and Queues fetch public notices; D1 stores canonical records; R2 stores generated CSV/JSON/GeoJSON artifacts; the UI remains safety-first and focused on commute-delay planning.
+      </footer>
+
+      <script type="application/json" id="component-inventory">
+      {
+        "components": [
+          {"name":"AppShell","kind":"layout","responsibilities":["render visual spec","preserve embedded JSON contracts","support responsive dashboard layout"]},
+          {"name":"TopNavigation","kind":"navigation","responsibilities":["link to map, settings, pipeline, artifacts, Cloudflare, and build contract"]},
+          {"name":"HeroPanel","kind":"product-intro","source":"#app-spec","responsibilities":["explain Cloudflare-native checkpoint notice system"]},
+          {"name":"OperationsSnapshotCard","kind":"dashboard-summary","model":"WorkspaceSettings","responsibilities":["show zip count, agency count, next check, and review queue"]},
+          {"name":"ExpandableMapPanel","kind":"map-dashboard","source":"#map-ui-spec","responsibilities":["render split/fullscreen/table/brief map modes"]},
+          {"name":"ZipJurisdictionSettingsPanel","kind":"settings","source":"#zip-jurisdiction-spec","responsibilities":["configure zip-to-agency mappings and review states"]},
+          {"name":"ScheduleSettingsPanel","kind":"settings","source":"#schedule-spec","responsibilities":["configure cron timing and manual refresh"]},
+          {"name":"IngestionPipelinePanel","kind":"workflow","source":"#source-ingestion-spec","responsibilities":["show cron-to-artifact pipeline"]},
+          {"name":"ArtifactGenerationPanel","kind":"exports","source":"#artifact-generation-spec","responsibilities":["explain CSV, JSON, GeoJSON, and brief generation"]},
+          {"name":"CloudflareArchitecturePanel","kind":"architecture","source":"#cloudflare-spec","responsibilities":["show Worker, D1, R2, Queue, Cron responsibilities"]},
+          {"name":"BuildContractPanel","kind":"agent-instructions","source":"#agents-spec","responsibilities":["provide paste-ready build contract"]}
+        ]
+      }
+      </script>
+    </main>
+  </div>
+</body>
+</html>
