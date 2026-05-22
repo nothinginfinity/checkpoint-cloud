@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Checkpoint",
+  "description": "A canonical DUI/sobriety checkpoint record",
+  "type": "object",
+  "required": ["notice_id", "date", "agency", "status", "confidence_score", "source_type"],
+  "properties": {
+    "notice_id": {
+      "type": "string",
+      "description": "Unique ID: {county}-{date}-{city_abbr}-{corridor_abbr}. E.g. oc-20260522-dp-pch"
+    },
+    "date": { "type": "string", "format": "date" },
+    "day": { "type": "string", "enum": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"] },
+    "start_time": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+    "end_time": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+    "city": { "type": "string" },
+    "general_location": { "type": "string" },
+    "intersection": { "type": "string" },
+    "corridor": { "type": "string" },
+    "latitude": { "type": "number" },
+    "longitude": { "type": "number" },
+    "agency": { "type": "string", "description": "OCSD, LAPD, CHP, APD, etc." },
+    "status": {
+      "type": "string",
+      "enum": ["Scheduled", "Tentative", "Active", "Completed", "Cancelled"]
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["official_press_release", "official_incident_page", "third_party_tracker", "manual_entry"]
+    },
+    "source_name": { "type": "string" },
+    "source_url": { "type": "string", "format": "uri" },
+    "published_at": { "type": "string" },
+    "captured_at": { "type": "string" },
+    "confidence_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "delay_risk": { "type": "string", "enum": ["Low", "Medium", "High"] },
+    "driver_flags_count": { "type": "integer", "default": 0 },
+    "actual_delay_minutes": { "type": "integer" },
+    "notes": { "type": "string" }
+  }
+}
