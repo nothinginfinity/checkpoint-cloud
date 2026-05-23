@@ -109,32 +109,49 @@ button:hover{background:var(--surface2)}
 .ml-auto{margin-left:auto}
 
 /* ── LAYOUT ────────────────────────────────────────────────
-   Desktop: side-by-side, sidebar left / map right
-   Mobile:  single column, MAP on top, cards below
+   Desktop (>900px): sidebar left (380px) | map right (flex-fill)
+   Mobile  (≤900px): full-width column — MAP first, cards below
+   KEY: #map MUST have an explicit pixel/vw height in EVERY
+   layout context — Leaflet renders 0px if the grid row is "auto"
+   and the div has no content to push it open.
 ─────────────────────────────────────────────────────────── */
+
+/* ── Desktop layout ── */
 .app-layout{
   display:grid;
   grid-template-columns:380px 1fr;
-  height:calc(100vh - 56px - 52px - 60px);
+  /* fixed height = viewport minus nav(56) + filter-bar(~52) + status-bar(~42) */
+  height:calc(100vh - 150px);
   min-height:500px;
 }
+.app-layout .sidebar{grid-column:1;grid-row:1;overflow-y:auto;border-right:1px solid var(--border);}
+.app-layout #map    {grid-column:2;grid-row:1;}
 
-/* Desktop: explicit placement keeps sidebar left, map right */
-.app-layout .sidebar { grid-column:1; grid-row:1; }
-.app-layout #map     { grid-column:2; grid-row:1; }
-
+/* ── Mobile layout ── */
 @media(max-width:900px){
   .app-layout{
-    grid-template-columns:1fr;
-    grid-template-rows:auto auto;  /* map height auto, cards scroll */
+    display:flex;
+    flex-direction:column;  /* column = natural stacking, no order tricks needed */
     height:auto;
   }
-  /* Map comes first visually */
-  .app-layout #map     { order:1; height:52vw; min-height:220px; max-height:340px; }
-  .app-layout .sidebar { order:2; max-height:60vh; overflow-y:auto; }
+  /* Map is declared FIRST in HTML so it's naturally on top —
+     give it an explicit height so Leaflet has something to fill */
+  .app-layout #map{
+    width:100%;
+    height:56vw;          /* scales with screen width */
+    min-height:240px;     /* never shorter than 240px */
+    max-height:360px;     /* never taller than 360px */
+    flex-shrink:0;
+  }
+  .app-layout .sidebar{
+    flex:1;
+    max-height:60vh;
+    overflow-y:auto;
+    border-right:none;
+    border-top:1px solid var(--border);
+  }
 }
 
-.sidebar{overflow-y:auto;border-right:1px solid var(--border)}
 .sidebar-header{padding:0.875rem 1rem;border-bottom:1px solid var(--border);font-size:0.78rem;color:var(--muted);display:flex;align-items:center;justify-content:space-between;}
 #checkpoint-count{color:var(--text);font-weight:600}
 .checkpoint-card{padding:1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.12s;}
@@ -246,10 +263,11 @@ button:hover{background:var(--surface2)}
   </div>
 </div>
 
-<!-- Map and sidebar are siblings inside .app-layout.
-     On desktop: sidebar left (col 1), map right (col 2).
-     On mobile:  map gets order:1 (top), sidebar gets order:2 (below). -->
+<!-- IMPORTANT: on mobile this is a flex-column, so DOM order = visual order.
+     #map comes FIRST in the DOM so it renders above .sidebar on mobile.
+     On desktop the grid explicit placement overrides visual order anyway. -->
 <div class="app-layout">
+  <div id="map"></div>
   <div class="sidebar">
     <div class="sidebar-header">
       <span>Showing <span id="checkpoint-count">0</span> checkpoints</span>
@@ -257,7 +275,6 @@ button:hover{background:var(--surface2)}
     </div>
     <div id="checkpoint-list"></div>
   </div>
-  <div id="map"></div>
 </div>
 
 <div class="status-bar">
@@ -322,8 +339,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; <a href="https://carto.com">CARTO</a>',maxZoom:19}).addTo(map);
   renderAll(CHECKPOINTS);
   document.getElementById('share-url').value=window.location.href;
-  // Leaflet needs a size recalc after CSS reorder settles on mobile
-  setTimeout(()=>map.invalidateSize(),120);
+  // Leaflet needs a size recalc after first paint
+  setTimeout(()=>map.invalidateSize(),150);
 });
 
 function riskColor(r){return r==='High'?'#ef4444':r==='Medium'?'#eab308':'#22c55e'}
@@ -347,7 +364,7 @@ function renderAll(data){
     m.on('click',()=>selectCard(cp,card));markers.push(m);
   });
   if(data.length)map.setView([data[0].lat,data[0].lng],12);
-  // Recalc map size whenever results update (filter changes can resize the sidebar)
+  // Recalc size every time results re-render
   setTimeout(()=>map.invalidateSize(),80);
 }
 function selectCard(cp,card){
