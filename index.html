@@ -108,15 +108,6 @@ button:hover{background:var(--surface2)}
 .btn-ghost:hover{border-color:var(--primary);color:var(--primary)}
 .ml-auto{margin-left:auto}
 
-/* ── LAYOUT ────────────────────────────────────────────────
-   Desktop (>900px): sidebar left (380px) | map right (flex-fill)
-   Mobile  (≤900px): full-width column — MAP first, cards below
-   KEY: #map MUST have an explicit pixel/vw height in EVERY
-   layout context — Leaflet renders 0px if the grid row is "auto"
-   and the div has no content to push it open.
-─────────────────────────────────────────────────────────── */
-
-/* ── Desktop layout ── */
 .app-layout{
   display:grid;
   grid-template-columns:380px 1fr;
@@ -126,7 +117,6 @@ button:hover{background:var(--surface2)}
 .app-layout .sidebar{grid-column:1;grid-row:1;overflow-y:auto;border-right:1px solid var(--border);}
 .app-layout #map    {grid-column:2;grid-row:1;}
 
-/* ── Mobile layout ── */
 @media(max-width:900px){
   .app-layout{
     display:flex;
@@ -232,7 +222,7 @@ button:hover{background:var(--surface2)}
     </div>
     <div class="meta-pill">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      OCSD · CHP · Public sources only
+      OCSD · LPD · CHP · Public sources only
     </div>
   </div>
 </div>
@@ -243,6 +233,7 @@ button:hover{background:var(--surface2)}
   <select id="agency-filter" onchange="filterByZip()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.45rem 0.75rem;font-size:0.875rem;outline:none">
     <option value="">All agencies</option>
     <option value="OCSD">OCSD</option>
+    <option value="LPD">LPD</option>
     <option value="CHP">CHP</option>
   </select>
   <select id="risk-filter" onchange="filterByZip()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.45rem 0.75rem;font-size:0.875rem;outline:none">
@@ -293,26 +284,38 @@ button:hover{background:var(--surface2)}
 
 <script>
 const CHECKPOINTS = [
+  // ── Dana Point ──
   {id:'oc-20260522-dp-pch',date:'2026-05-22',day:'Friday',start:'6:00 PM',end:'2:00 AM',city:'Dana Point',location:'Pacific Coast Highway (PCH)',intersection:'PCH near Golden Lantern',corridor:'Coastal / PCH',lat:33.4669,lng:-117.6981,agency:'OCSD',status:'Scheduled',risk:'High',confidence:0.95,zip:'92629',source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov/news/ocsd-hold-dui-checkpoint-dana-point-2',notes:'OCSD announced checkpoint same corridor. Memorial Day weekend.'},
-  {id:'oc-20260523-sc-ecr',date:'2026-05-23',day:'Saturday',start:'7:00 PM',end:'3:00 AM',city:'San Clemente',location:'El Camino Real',intersection:'El Camino Real near Avenida Palizada',corridor:'San Clemente / El Camino Real',lat:33.4270,lng:-117.6116,agency:'OCSD',status:'Scheduled',risk:'High',confidence:0.95,zip:'92672',source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',notes:'Memorial Day Saturday enforcement.'},
   {id:'oc-20260524-dp-pchmw',date:'2026-05-24',day:'Sunday',start:'8:00 PM',end:'2:00 AM',city:'Dana Point',location:'PCH / Doheny State Beach area',intersection:'PCH near Dana Point Harbor Dr',corridor:'Coastal / PCH',lat:33.4600,lng:-117.6870,agency:'OCSD',status:'Likely',risk:'High',confidence:0.78,zip:'92629',source:'Pattern / Memorial Day',sourceUrl:'https://ocsheriff.gov',notes:'Memorial Day Sunday — elevated probability based on OCSD pattern.'},
-  {id:'oc-20260529-ln-cvp',date:'2026-05-29',day:'Friday',start:'6:30 PM',end:'2:30 AM',city:'Laguna Niguel',location:'Crown Valley Pkwy',intersection:'Crown Valley Pkwy near Niguel Rd',corridor:'Inland connector',lat:33.5225,lng:-117.7058,agency:'OCSD',status:'Tentative',risk:'Medium',confidence:0.62,zip:'92677',source:'Community report',sourceUrl:'https://ocsheriff.gov',notes:'Needs verification.'},
-  {id:'oc-20260530-dp-do',date:'2026-05-30',day:'Saturday',start:'7:00 PM',end:'2:00 AM',city:'Dana Point',location:'Del Obispo St',intersection:'Del Obispo St near Stonehill Dr',corridor:'Dana Point connector',lat:33.4748,lng:-117.7027,agency:'OCSD',status:'Scheduled',risk:'Medium',confidence:0.95,zip:'92629',source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',notes:'Approximate intersection placeholder.'}
+  {id:'oc-20260530-dp-do',date:'2026-05-30',day:'Saturday',start:'7:00 PM',end:'2:00 AM',city:'Dana Point',location:'Del Obispo St',intersection:'Del Obispo St near Stonehill Dr',corridor:'Dana Point connector',lat:33.4748,lng:-117.7027,agency:'OCSD',status:'Scheduled',risk:'Medium',confidence:0.95,zip:'92629',source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',notes:'Approximate intersection placeholder.'},
+
+  // ── Laguna Beach ──
+  // LPD regularly runs DUI checkpoints on PCH through the village on holiday weekends.
+  // No specific LPD announcement found for this weekend — marked Pattern/Likely.
+  {id:'oc-20260523-lb-pch-brooks',date:'2026-05-23',day:'Saturday',start:'8:00 PM',end:'3:00 AM',city:'Laguna Beach',location:'Pacific Coast Highway (PCH)',intersection:'PCH near Brooks St',corridor:'Coastal / PCH through village',lat:33.5427,lng:-117.7854,agency:'LPD',status:'Likely',risk:'High',confidence:0.72,zip:'92651',source:'Pattern / Holiday weekend',sourceUrl:'https://lagunabeachcity.net/city-services/police',notes:'LPD historically runs PCH checkpoints through the village on holiday Saturdays. No specific announcement found — verify at lagunabeachcity.net.'},
+  {id:'oc-20260524-lb-canyon',date:'2026-05-24',day:'Sunday',start:'7:00 PM',end:'2:00 AM',city:'Laguna Beach',location:'Laguna Canyon Rd (SR-133)',intersection:'Laguna Canyon Rd near El Toro Rd',corridor:'Canyon corridor / SR-133',lat:33.5632,lng:-117.7580,agency:'LPD',status:'Tentative',risk:'Medium',confidence:0.58,zip:'92651',source:'Community pattern',sourceUrl:'https://lagunabeachcity.net/city-services/police',notes:'SR-133 / Laguna Canyon Rd is a secondary checkpoint corridor used by LPD. Tentative — needs verification.'},
+  {id:'oc-20260529-lb-pch-broadway',date:'2026-05-29',day:'Friday',start:'9:00 PM',end:'2:00 AM',city:'Laguna Beach',location:'Pacific Coast Highway (PCH)',intersection:'PCH near Broadway / downtown',corridor:'Coastal / PCH downtown core',lat:33.5445,lng:-117.7832,agency:'LPD',status:'Tentative',risk:'Medium',confidence:0.60,zip:'92651',source:'Community pattern',sourceUrl:'https://lagunabeachcity.net/city-services/police',notes:'Downtown PCH near Broadway is a common LPD checkpoint location on summer Friday nights. No specific announcement — verify before driving.'},
+
+  // ── San Clemente ──
+  {id:'oc-20260523-sc-ecr',date:'2026-05-23',day:'Saturday',start:'7:00 PM',end:'3:00 AM',city:'San Clemente',location:'El Camino Real',intersection:'El Camino Real near Avenida Palizada',corridor:'San Clemente / El Camino Real',lat:33.4270,lng:-117.6116,agency:'OCSD',status:'Scheduled',risk:'High',confidence:0.95,zip:'92672',source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',notes:'Memorial Day Saturday enforcement.'},
+
+  // ── Laguna Niguel ──
+  {id:'oc-20260529-ln-cvp',date:'2026-05-29',day:'Friday',start:'6:30 PM',end:'2:30 AM',city:'Laguna Niguel',location:'Crown Valley Pkwy',intersection:'Crown Valley Pkwy near Niguel Rd',corridor:'Inland connector',lat:33.5225,lng:-117.7058,agency:'OCSD',status:'Tentative',risk:'Medium',confidence:0.62,zip:'92677',source:'Community report',sourceUrl:'https://ocsheriff.gov',notes:'Needs verification.'}
 ];
 
 /*
-  ZIP_MAP — maps a zip code to the city/neighborhood names used in CHECKPOINTS[].city
-  Laguna Beach zips:
-    92651 — Laguna Beach main (north village, downtown, Emerald Bay)
-    92652 — Laguna Beach PO boxes (same geography as 92651)
-    92653 — Laguna Hills / South Laguna border (Alta Laguna, Top of the World, Laguna Hills overlap)
+  ZIP_MAP — maps zip to city names used in CHECKPOINTS[].city
+  Laguna Beach:
+    92651 — main / downtown / north village / Emerald Bay
+    92652 — PO boxes (same geography as 92651)
+    92653 — South Laguna / Alta Laguna / Top of the World / Laguna Hills border
 */
 const ZIP_MAP={
   '92629':['Dana Point','Monarch Beach'],
   '92624':['Capistrano Beach','Dana Point'],
   '92651':['Laguna Beach'],
   '92652':['Laguna Beach'],
-  '92653':['Laguna Beach','Laguna Hills'],  // South Laguna / Alta Laguna / Top of the World
+  '92653':['Laguna Beach','Laguna Hills'],
   '92677':['Laguna Niguel'],
   '92672':['San Clemente'],
   '92673':['San Clemente'],
@@ -345,7 +348,7 @@ if('serviceWorker' in navigator){
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
-  map=L.map('map').setView([33.47,-117.69],12);
+  map=L.map('map').setView([33.50,-117.73],11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; <a href="https://carto.com">CARTO</a>',maxZoom:19}).addTo(map);
   renderAll(CHECKPOINTS);
   document.getElementById('share-url').value=window.location.href;
@@ -372,7 +375,10 @@ function renderAll(data){
     const m=L.marker([cp.lat,cp.lng],{icon:makeIcon(cp)}).addTo(map).bindPopup(`<b>${cp.intersection}</b><br>${cp.city}<br>${cp.day} ${cp.start}&ndash;${cp.end}<br><span style="color:${riskColor(cp.risk)};font-weight:700">${cp.risk} Risk</span> &mdash; ${cp.agency}`);
     m.on('click',()=>selectCard(cp,card));markers.push(m);
   });
-  if(data.length)map.setView([data[0].lat,data[0].lng],12);
+  if(data.length){
+    const bounds=L.latLngBounds(data.map(cp=>[cp.lat,cp.lng]));
+    map.fitBounds(bounds,{padding:[40,40]});
+  }
   setTimeout(()=>map.invalidateSize(),80);
 }
 function selectCard(cp,card){
@@ -411,7 +417,7 @@ function closeShareModal(e){if(!e||e.target===document.getElementById('share-mod
 function buildShareText(){
   const top=filtered.slice(0,3);let txt='⚠️ DUI Checkpoint Alert — South OC\n\n';
   top.forEach(cp=>{txt+=`● ${cp.city}: ${cp.intersection}\n  ${cp.day} ${cp.date.slice(5).replace('-','/')} · ${cp.start}–${cp.end} · ${cp.risk} Risk\n\n`;});
-  txt+='Stay safe. Source: OCSD (ocsheriff.gov)';
+  txt+='Stay safe. Source: OCSD / LPD (lagunabeachcity.net/police)';
   document.getElementById('share-text-area').textContent=txt;
 }
 function copyShareUrl(){navigator.clipboard.writeText(document.getElementById('share-url').value).then(()=>showToast('✓ Link copied'));}
