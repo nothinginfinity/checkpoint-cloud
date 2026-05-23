@@ -102,6 +102,25 @@ button:hover{background:var(--surface2)}
 .card-btn:hover{border-color:var(--primary);color:var(--primary)}
 #map{z-index:1}
 .leaflet-container{background:#0d1018}
+
+/* ── Drink emoji marker ── */
+.drink-marker{
+  display:flex;align-items:center;justify-content:center;
+  width:42px;height:42px;
+  background:rgba(15,17,23,0.82);
+  border-radius:50%;
+  border:2px solid rgba(255,255,255,0.18);
+  box-shadow:0 3px 12px rgba(0,0,0,0.55),0 1px 3px rgba(0,0,0,0.4);
+  font-size:22px;line-height:1;
+  cursor:pointer;
+  transition:transform 0.15s cubic-bezier(0.16,1,0.3,1),box-shadow 0.15s;
+  backdrop-filter:blur(4px);
+}
+.drink-marker:hover{transform:scale(1.18);box-shadow:0 6px 20px rgba(0,0,0,0.7);}
+.drink-marker.risk-high{border-color:rgba(239,68,68,0.55);background:rgba(60,10,10,0.88);}
+.drink-marker.risk-medium{border-color:rgba(234,179,8,0.55);background:rgba(50,38,5,0.88);}
+.drink-marker.risk-low{border-color:rgba(34,197,94,0.45);background:rgba(5,40,18,0.88);}
+
 .status-bar{background:var(--surface);border-top:1px solid var(--border);padding:0.45rem 1.5rem;display:flex;align-items:center;gap:1.5rem;font-size:0.75rem;color:var(--muted);}
 .status-dot{width:7px;height:7px;border-radius:50%;background:var(--yellow);display:inline-block;margin-right:0.35rem}
 .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:0.65rem 1.25rem;border-radius:var(--radius);font-size:0.85rem;box-shadow:var(--shadow);z-index:9999;transition:transform 0.25s cubic-bezier(0.16,1,0.3,1);pointer-events:none;}
@@ -223,146 +242,30 @@ button:hover{background:var(--surface2)}
 <div class="toast" id="toast"></div>
 
 <script>
-// ─────────────────────────────────────────────────────────────────────────────
-// CHECKPOINT DATA
-// Sources:
-//   LPD official press releases: lagunabeachcity.net (Feb 2026, Apr 2026)
-//   LPD corridor confirmation: newsantaana.com (Apr 17, 2026 announcement)
-//   OCSD: ocsheriff.gov newsroom
-//
-// LPD confirmed corridors (per Apr 2026 official announcement):
-//   1. Laguna Canyon Rd (SR-133) — near Pageant of the Masters / village entrance
-//   2. PCH north end (within city limits)
-//   3. PCH south end (within city limits) — also covers South Laguna
-//   4. East Patrol Division — east of Cherry Ave (covers inland/upper neighborhoods)
-//
-// LPD standard window: 6 PM – 2 AM (confirmed Feb 2026 + Apr 2026 press releases)
-// LPD does NOT pre-announce exact intersection — location is "undisclosed"
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Drink emoji per risk level ──────────────────────────────────────────────
+// 🍾 High risk  (champagne — the serious one)
+// 🍷 Medium risk (wine — moderate)
+// 🍺 Low risk   (beer — chill)
+const DRINK_EMOJI = { High: '🍾', Medium: '🍷', Low: '🍺' };
+
 const CHECKPOINTS = [
-
-  // ── Dana Point ──────────────────────────────────────────────────────────────
-  {
-    id:'oc-20260522-dp-pch',date:'2026-05-22',day:'Friday',start:'6:00 PM',end:'2:00 AM',
-    city:'Dana Point',location:'Pacific Coast Highway (PCH)',
-    intersection:'PCH near Golden Lantern',corridor:'Coastal / PCH',
-    lat:33.4669,lng:-117.6981,agency:'OCSD',status:'Scheduled',risk:'High',confidence:0.95,
-    zip:'92629',verified:true,
-    source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov/news/ocsd-hold-dui-checkpoint-dana-point-2',
-    notes:'OCSD announced Memorial Day weekend checkpoint on this corridor.'
-  },
-  {
-    id:'oc-20260524-dp-pchmw',date:'2026-05-24',day:'Sunday',start:'8:00 PM',end:'2:00 AM',
-    city:'Dana Point',location:'PCH / Doheny State Beach area',
-    intersection:'PCH near Dana Point Harbor Dr',corridor:'Coastal / PCH',
-    lat:33.4600,lng:-117.6870,agency:'OCSD',status:'Likely',risk:'High',confidence:0.78,
-    zip:'92629',verified:false,
-    source:'Pattern / Memorial Day',sourceUrl:'https://ocsheriff.gov',
-    notes:'Memorial Day Sunday — elevated probability based on OCSD holiday pattern.'
-  },
-  {
-    id:'oc-20260530-dp-do',date:'2026-05-30',day:'Saturday',start:'7:00 PM',end:'2:00 AM',
-    city:'Dana Point',location:'Del Obispo St',
-    intersection:'Del Obispo St near Stonehill Dr',corridor:'Dana Point connector',
-    lat:33.4748,lng:-117.7027,agency:'OCSD',status:'Scheduled',risk:'Medium',confidence:0.95,
-    zip:'92629',verified:true,
-    source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',
-    notes:'OCSD scheduled post-Memorial Day Saturday enforcement.'
-  },
-
-  // ── Laguna Beach — PCH Village (92651) ───────────────────────────────────
-  // Corridor confirmed by LPD Apr 17 2026 official announcement (newsantaana.com).
-  // LPD does not pre-disclose exact intersection — uses "undisclosed location."
-  // Standard LPD window: 6 PM–2 AM per Feb 2026 + Apr 2026 press releases.
-  {
-    id:'oc-20260523-lb-pch-north',date:'2026-05-23',day:'Saturday',start:'6:00 PM',end:'2:00 AM',
-    city:'Laguna Beach',location:'Pacific Coast Highway (PCH) — North',
-    intersection:'PCH north end of city limits (near Emerald Bay / N. Coast Hwy)',
-    corridor:'Coastal / PCH north Laguna Beach',
-    lat:33.5620,lng:-117.7960,agency:'LPD',status:'Likely',risk:'High',confidence:0.78,
-    zip:'92651',verified:true,
-    source:'LPD Apr 2026 announcement — confirmed PCH north corridor',
-    sourceUrl:'https://newsantaana.com/dui-checkpoint-set-for-friday-night-april-17-in-coastal-orange-county/',
-    notes:'PCH north end is an LPD-confirmed checkpoint corridor per the Apr 17, 2026 official announcement. Exact intersection undisclosed by LPD policy. Memorial Day Saturday.'
-  },
-  {
-    id:'oc-20260524-lb-canyon',date:'2026-05-24',day:'Sunday',start:'6:00 PM',end:'2:00 AM',
-    city:'Laguna Beach',location:'Laguna Canyon Rd (SR-133)',
-    intersection:'Laguna Canyon Rd near Pageant of the Masters / village entrance',
-    corridor:'Canyon corridor / SR-133',
-    lat:33.5427,lng:-117.7568,agency:'LPD',status:'Likely',risk:'High',confidence:0.80,
-    zip:'92651',verified:true,
-    source:'LPD Apr 2026 announcement — #1 confirmed corridor; Sept 2025 checkpoint here processed 2,984 vehicles',
-    sourceUrl:'https://www.lagunabeachcity.net/Home/Components/News/News/1483/13',
-    notes:'SR-133 at Pageant of the Masters intersection is LPD\'s most frequently cited checkpoint location. Confirmed in Apr 2026 official announcement. 6 PM–2 AM is the verified LPD window per Feb + Apr 2026 press releases.'
-  },
-  {
-    id:'oc-20260529-lb-pch-broadway',date:'2026-05-29',day:'Friday',start:'6:00 PM',end:'2:00 AM',
-    city:'Laguna Beach',location:'Pacific Coast Highway (PCH) — Downtown',
-    intersection:'PCH near Broadway / downtown village',
-    corridor:'Coastal / PCH downtown core',
-    lat:33.5445,lng:-117.7832,agency:'LPD',status:'Tentative',risk:'Medium',confidence:0.62,
-    zip:'92651',verified:true,
-    source:'LPD confirmed PCH corridor; exact date pattern-based',
-    sourceUrl:'https://www.lagunabeachcity.net/city-services/police',
-    notes:'PCH through downtown is an LPD-confirmed corridor. No May 29 specific announcement found — verify at lagunabeachcity.net before driving.'
-  },
-
-  // ── Laguna Beach — East Patrol / South Laguna (92653) ────────────────────
-  // "East Patrol Division" is an LPD-confirmed checkpoint corridor (east of Cherry Ave).
-  // Covers South Laguna / Alta Laguna / Top of the World / upper Laguna neighborhoods.
-  // 92653 zip covers South Laguna and the Laguna Hills border area.
-  {
-    id:'oc-20260523-lb-east-patrol',date:'2026-05-23',day:'Saturday',start:'6:00 PM',end:'2:00 AM',
-    city:'Laguna Beach',location:'East Patrol Division — South Laguna / east of Cherry Ave',
-    intersection:'PCH south end (near Wesley Dr / South Laguna)',
-    corridor:'PCH south / South Laguna / East Patrol Division',
-    lat:33.5158,lng:-117.7620,agency:'LPD',status:'Likely',risk:'High',confidence:0.75,
-    zip:'92653',verified:true,
-    source:'LPD Apr 2026 announcement — East Patrol Division listed as confirmed corridor',
-    sourceUrl:'https://newsantaana.com/dui-checkpoint-set-for-friday-night-april-17-in-coastal-orange-county/',
-    notes:'LPD\'s "East Patrol Division" (east of Cherry Ave, covering South Laguna / 92653 area) is explicitly named as a checkpoint corridor in the Apr 17, 2026 official announcement. Covers PCH south end and inland South Laguna streets. Exact intersection undisclosed per LPD policy.'
-  },
-  {
-    id:'oc-20260524-lb-south-laguna',date:'2026-05-24',day:'Sunday',start:'6:00 PM',end:'2:00 AM',
-    city:'Laguna Beach',location:'South Laguna — PCH south end',
-    intersection:'PCH near Nyes Place / South Laguna',
-    corridor:'PCH south / South Laguna',
-    lat:33.5080,lng:-117.7555,agency:'LPD',status:'Tentative',risk:'Medium',confidence:0.60,
-    zip:'92653',verified:true,
-    source:'LPD confirmed PCH south corridor; Memorial Day Sunday pattern',
-    sourceUrl:'https://newsantaana.com/dui-checkpoint-set-for-friday-night-april-17-in-coastal-orange-county/',
-    notes:'PCH south end through South Laguna is an LPD-confirmed corridor. Memorial Day Sunday pattern. No specific announcement — verify at lagunabeachcity.net.'
-  },
-
-  // ── San Clemente ─────────────────────────────────────────────────────────
-  {
-    id:'oc-20260523-sc-ecr',date:'2026-05-23',day:'Saturday',start:'7:00 PM',end:'3:00 AM',
-    city:'San Clemente',location:'El Camino Real',
-    intersection:'El Camino Real near Avenida Palizada',corridor:'San Clemente / El Camino Real',
-    lat:33.4270,lng:-117.6116,agency:'OCSD',status:'Scheduled',risk:'High',confidence:0.95,
-    zip:'92672',verified:true,
-    source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',
-    notes:'Memorial Day Saturday enforcement.'
-  },
-
-  // ── Laguna Niguel ────────────────────────────────────────────────────────
-  {
-    id:'oc-20260529-ln-cvp',date:'2026-05-29',day:'Friday',start:'6:30 PM',end:'2:30 AM',
-    city:'Laguna Niguel',location:'Crown Valley Pkwy',
-    intersection:'Crown Valley Pkwy near Niguel Rd',corridor:'Inland connector',
-    lat:33.5225,lng:-117.7058,agency:'OCSD',status:'Tentative',risk:'Medium',confidence:0.62,
-    zip:'92677',verified:false,
-    source:'Community report',sourceUrl:'https://ocsheriff.gov',
-    notes:'Needs verification from OCSD newsroom.'
-  }
+  // ── Dana Point ──
+  {id:'oc-20260522-dp-pch',date:'2026-05-22',day:'Friday',start:'6:00 PM',end:'2:00 AM',city:'Dana Point',location:'Pacific Coast Highway (PCH)',intersection:'PCH near Golden Lantern',corridor:'Coastal / PCH',lat:33.4669,lng:-117.6981,agency:'OCSD',status:'Scheduled',risk:'High',confidence:0.95,zip:'92629',verified:true,source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov/news/ocsd-hold-dui-checkpoint-dana-point-2',notes:'OCSD announced Memorial Day weekend checkpoint on this corridor.'},
+  {id:'oc-20260524-dp-pchmw',date:'2026-05-24',day:'Sunday',start:'8:00 PM',end:'2:00 AM',city:'Dana Point',location:'PCH / Doheny State Beach area',intersection:'PCH near Dana Point Harbor Dr',corridor:'Coastal / PCH',lat:33.4600,lng:-117.6870,agency:'OCSD',status:'Likely',risk:'High',confidence:0.78,zip:'92629',verified:false,source:'Pattern / Memorial Day',sourceUrl:'https://ocsheriff.gov',notes:'Memorial Day Sunday — elevated probability based on OCSD holiday pattern.'},
+  {id:'oc-20260530-dp-do',date:'2026-05-30',day:'Saturday',start:'7:00 PM',end:'2:00 AM',city:'Dana Point',location:'Del Obispo St',intersection:'Del Obispo St near Stonehill Dr',corridor:'Dana Point connector',lat:33.4748,lng:-117.7027,agency:'OCSD',status:'Scheduled',risk:'Medium',confidence:0.95,zip:'92629',verified:true,source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',notes:'OCSD scheduled post-Memorial Day Saturday enforcement.'},
+  // ── Laguna Beach — PCH Village (92651) ──
+  {id:'oc-20260523-lb-pch-north',date:'2026-05-23',day:'Saturday',start:'6:00 PM',end:'2:00 AM',city:'Laguna Beach',location:'Pacific Coast Highway (PCH) — North',intersection:'PCH north end of city limits (near Emerald Bay)',corridor:'Coastal / PCH north Laguna Beach',lat:33.5620,lng:-117.7960,agency:'LPD',status:'Likely',risk:'High',confidence:0.78,zip:'92651',verified:true,source:'LPD Apr 2026 announcement — confirmed PCH north corridor',sourceUrl:'https://newsantaana.com/dui-checkpoint-set-for-friday-night-april-17-in-coastal-orange-county/',notes:'PCH north end is an LPD-confirmed checkpoint corridor per Apr 17, 2026 official announcement.'},
+  {id:'oc-20260524-lb-canyon',date:'2026-05-24',day:'Sunday',start:'6:00 PM',end:'2:00 AM',city:'Laguna Beach',location:'Laguna Canyon Rd (SR-133)',intersection:'Laguna Canyon Rd near Pageant of the Masters',corridor:'Canyon corridor / SR-133',lat:33.5427,lng:-117.7568,agency:'LPD',status:'Likely',risk:'High',confidence:0.80,zip:'92651',verified:true,source:'LPD Apr 2026 announcement — #1 confirmed corridor; 2,984 vehicles processed Sept 2025',sourceUrl:'https://www.lagunabeachcity.net/Home/Components/News/News/1483/13',notes:'SR-133 at Pageant of the Masters is LPD\'s most frequently cited checkpoint location.'},
+  {id:'oc-20260529-lb-pch-broadway',date:'2026-05-29',day:'Friday',start:'6:00 PM',end:'2:00 AM',city:'Laguna Beach',location:'Pacific Coast Highway (PCH) — Downtown',intersection:'PCH near Broadway / downtown village',corridor:'Coastal / PCH downtown core',lat:33.5445,lng:-117.7832,agency:'LPD',status:'Tentative',risk:'Medium',confidence:0.62,zip:'92651',verified:true,source:'LPD confirmed PCH corridor; exact date pattern-based',sourceUrl:'https://www.lagunabeachcity.net/city-services/police',notes:'PCH through downtown is an LPD-confirmed corridor. No May 29 specific announcement — verify at lagunabeachcity.net.'},
+  // ── Laguna Beach — East Patrol / South Laguna (92653) ──
+  {id:'oc-20260523-lb-east-patrol',date:'2026-05-23',day:'Saturday',start:'6:00 PM',end:'2:00 AM',city:'Laguna Beach',location:'East Patrol Division — South Laguna / east of Cherry Ave',intersection:'PCH south end (near Wesley Dr / South Laguna)',corridor:'PCH south / South Laguna / East Patrol Division',lat:33.5158,lng:-117.7620,agency:'LPD',status:'Likely',risk:'High',confidence:0.75,zip:'92653',verified:true,source:'LPD Apr 2026 announcement — East Patrol Division listed as confirmed corridor',sourceUrl:'https://newsantaana.com/dui-checkpoint-set-for-friday-night-april-17-in-coastal-orange-county/',notes:'LPD\'s East Patrol Division (east of Cherry Ave, covering South Laguna / 92653) is explicitly named as a checkpoint corridor in the Apr 17, 2026 official announcement.'},
+  {id:'oc-20260524-lb-south-laguna',date:'2026-05-24',day:'Sunday',start:'6:00 PM',end:'2:00 AM',city:'Laguna Beach',location:'South Laguna — PCH south end',intersection:'PCH near Nyes Place / South Laguna',corridor:'PCH south / South Laguna',lat:33.5080,lng:-117.7555,agency:'LPD',status:'Tentative',risk:'Medium',confidence:0.60,zip:'92653',verified:true,source:'LPD confirmed PCH south corridor; Memorial Day Sunday pattern',sourceUrl:'https://newsantaana.com/dui-checkpoint-set-for-friday-night-april-17-in-coastal-orange-county/',notes:'PCH south end through South Laguna is an LPD-confirmed corridor. Memorial Day Sunday pattern.'},
+  // ── San Clemente ──
+  {id:'oc-20260523-sc-ecr',date:'2026-05-23',day:'Saturday',start:'7:00 PM',end:'3:00 AM',city:'San Clemente',location:'El Camino Real',intersection:'El Camino Real near Avenida Palizada',corridor:'San Clemente / El Camino Real',lat:33.4270,lng:-117.6116,agency:'OCSD',status:'Scheduled',risk:'High',confidence:0.95,zip:'92672',verified:true,source:'OCSD Newsroom',sourceUrl:'https://ocsheriff.gov',notes:'Memorial Day Saturday enforcement.'},
+  // ── Laguna Niguel ──
+  {id:'oc-20260529-ln-cvp',date:'2026-05-29',day:'Friday',start:'6:30 PM',end:'2:30 AM',city:'Laguna Niguel',location:'Crown Valley Pkwy',intersection:'Crown Valley Pkwy near Niguel Rd',corridor:'Inland connector',lat:33.5225,lng:-117.7058,agency:'OCSD',status:'Tentative',risk:'Medium',confidence:0.62,zip:'92677',verified:false,source:'Community report',sourceUrl:'https://ocsheriff.gov',notes:'Needs verification from OCSD newsroom.'}
 ];
 
-// ZIP_MAP — maps zip code → city name(s) used in CHECKPOINTS[].city
-// Laguna Beach:
-//   92651 — main city / downtown / north village / Emerald Bay
-//   92652 — PO boxes (same geography as 92651)
-//   92653 — South Laguna / Alta Laguna / Top of the World / East Patrol Division
 const ZIP_MAP = {
   '92629':['Dana Point','Monarch Beach'],
   '92624':['Capistrano Beach','Dana Point'],
@@ -404,12 +307,15 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => map.invalidateSize(), 150);
 });
 
-function riskColor(r) { return r === 'High' ? '#ef4444' : r === 'Medium' ? '#eab308' : '#22c55e'; }
 function makeIcon(cp) {
-  const c = riskColor(cp.risk);
+  const emoji = DRINK_EMOJI[cp.risk] || '🍸';
+  const riskClass = 'risk-' + cp.risk.toLowerCase();
   return L.divIcon({
-    className: '', iconSize: [32, 40], iconAnchor: [16, 40],
-    html: `<svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C7.163 0 0 7.163 0 16c0 11.25 16 24 16 24S32 27.25 32 16C32 7.163 24.837 0 16 0z" fill="${c}" opacity="0.9"/><circle cx="16" cy="16" r="7" fill="white" opacity="0.95"/><text x="16" y="20" text-anchor="middle" font-size="9" font-weight="700" fill="${c}">DUI</text></svg>`
+    className: '',
+    iconSize: [42, 42],
+    iconAnchor: [21, 21],
+    popupAnchor: [0, -24],
+    html: `<div class="drink-marker ${riskClass}" title="${cp.intersection}">${emoji}</div>`
   });
 }
 
@@ -429,9 +335,10 @@ function renderAll(data) {
     card.dataset.id = cp.id;
     const pct = Math.round(cp.confidence * 100);
     const verifiedTag = cp.verified ? '<span class="verified-badge">✓ Official corridor</span>' : '';
+    const emoji = DRINK_EMOJI[cp.risk] || '🍸';
     card.innerHTML = `
       <div class="card-top">
-        <span class="card-city">${cp.city}${verifiedTag}</span>
+        <span class="card-city">${emoji} ${cp.city}${verifiedTag}</span>
         <span class="risk-badge risk-${cp.risk.toLowerCase()}">${cp.risk} risk</span>
       </div>
       <div class="card-location">${cp.intersection}</div>
@@ -449,7 +356,7 @@ function renderAll(data) {
     card.addEventListener('click', () => selectCard(cp, card));
     list.appendChild(card);
     const m = L.marker([cp.lat, cp.lng], { icon: makeIcon(cp) }).addTo(map)
-      .bindPopup(`<b>${cp.intersection}</b><br>${cp.city}<br>${cp.day} ${cp.start}&ndash;${cp.end}<br><span style="color:${riskColor(cp.risk)};font-weight:700">${cp.risk} Risk</span> &mdash; ${cp.agency}${cp.verified ? '<br><span style="color:#22c55e;font-size:0.8em">✓ Official corridor</span>' : ''}`);
+      .bindPopup(`<b>${cp.intersection}</b><br>${cp.city}<br>${cp.day} ${cp.start}&ndash;${cp.end}<br><b>${emoji} ${cp.risk} Risk</b> — ${cp.agency}${cp.verified ? '<br><span style="color:#22c55e;font-size:0.8em">✓ Official corridor</span>' : ''}`);
     m.on('click', () => selectCard(cp, card));
     markers.push(m);
   });
@@ -500,7 +407,8 @@ function exportCSV() {
 
 function shareCheckpoint(id) {
   const cp = CHECKPOINTS.find(c => c.id === id); if (!cp) return;
-  const txt = `⚠️ DUI Checkpoint — ${cp.city}\n${cp.intersection}\n${cp.day} ${cp.date.slice(5).replace('-','/')} · ${cp.start}–${cp.end}\nRisk: ${cp.risk} · ${cp.agency}\nSource: ${cp.sourceUrl}`;
+  const emoji = DRINK_EMOJI[cp.risk] || '🍸';
+  const txt = `${emoji} DUI Checkpoint — ${cp.city}\n${cp.intersection}\n${cp.day} ${cp.date.slice(5).replace('-','/')} · ${cp.start}–${cp.end}\nRisk: ${cp.risk} · ${cp.agency}\nSource: ${cp.sourceUrl}`;
   if (navigator.share) navigator.share({ title: 'Checkpoint Alert', text: txt }).catch(() => {});
   else navigator.clipboard.writeText(txt).then(() => showToast('Copied to clipboard'));
 }
@@ -509,7 +417,10 @@ function openShareModal() { buildShareText(); document.getElementById('share-mod
 function closeShareModal(e) { if (!e || e.target === document.getElementById('share-modal')) document.getElementById('share-modal').classList.remove('open'); }
 function buildShareText() {
   const top = filtered.slice(0, 3); let txt = '⚠️ DUI Checkpoint Alert — South OC\n\n';
-  top.forEach(cp => { txt += `● ${cp.city}: ${cp.intersection}\n  ${cp.day} ${cp.date.slice(5).replace('-','/')} · ${cp.start}–${cp.end} · ${cp.risk} Risk\n\n`; });
+  top.forEach(cp => {
+    const emoji = DRINK_EMOJI[cp.risk] || '🍸';
+    txt += `${emoji} ${cp.city}: ${cp.intersection}\n  ${cp.day} ${cp.date.slice(5).replace('-','/')} · ${cp.start}–${cp.end} · ${cp.risk} Risk\n\n`;
+  });
   txt += 'Stay safe. Sources: ocsheriff.gov · lagunabeachcity.net/police';
   document.getElementById('share-text-area').textContent = txt;
 }
