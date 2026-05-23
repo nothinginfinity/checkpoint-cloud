@@ -101,14 +101,39 @@ button:hover{background:var(--surface2)}
 .filter-bar input:focus{border-color:var(--primary)}
 .filter-bar input::placeholder{color:var(--muted)}
 .filter-label{font-size:0.8rem;color:var(--muted);white-space:nowrap}
-btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 0.9rem;border-radius:var(--radius-sm);font-size:0.8rem;font-weight:600;cursor:pointer;border:none;transition:background 0.15s,color 0.15s;}
+.btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 0.9rem;border-radius:var(--radius-sm);font-size:0.8rem;font-weight:600;cursor:pointer;border:none;transition:background 0.15s,color 0.15s;}
 .btn-primary{background:var(--primary);color:#0f1117}
 .btn-primary:hover{background:var(--primary-hover)}
 .btn-ghost{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
 .btn-ghost:hover{border-color:var(--primary);color:var(--primary)}
 .ml-auto{margin-left:auto}
-.app-layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 56px - 52px - 60px);min-height:500px;}
-@media(max-width:900px){.app-layout{grid-template-columns:1fr;height:auto}#map{height:300px}}
+
+/* ── LAYOUT ────────────────────────────────────────────────
+   Desktop: side-by-side, sidebar left / map right
+   Mobile:  single column, MAP on top, cards below
+─────────────────────────────────────────────────────────── */
+.app-layout{
+  display:grid;
+  grid-template-columns:380px 1fr;
+  height:calc(100vh - 56px - 52px - 60px);
+  min-height:500px;
+}
+
+/* Desktop: explicit placement keeps sidebar left, map right */
+.app-layout .sidebar { grid-column:1; grid-row:1; }
+.app-layout #map     { grid-column:2; grid-row:1; }
+
+@media(max-width:900px){
+  .app-layout{
+    grid-template-columns:1fr;
+    grid-template-rows:auto auto;  /* map height auto, cards scroll */
+    height:auto;
+  }
+  /* Map comes first visually */
+  .app-layout #map     { order:1; height:52vw; min-height:220px; max-height:340px; }
+  .app-layout .sidebar { order:2; max-height:60vh; overflow-y:auto; }
+}
+
 .sidebar{overflow-y:auto;border-right:1px solid var(--border)}
 .sidebar-header{padding:0.875rem 1rem;border-bottom:1px solid var(--border);font-size:0.78rem;color:var(--muted);display:flex;align-items:center;justify-content:space-between;}
 #checkpoint-count{color:var(--text);font-weight:600}
@@ -129,7 +154,7 @@ btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 0.9rem;bor
 .card-actions{display:flex;gap:0.5rem;margin-top:0.65rem}
 .card-btn{font-size:0.72rem;padding:0.28rem 0.6rem;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);transition:all 0.12s;}
 .card-btn:hover{border-color:var(--primary);color:var(--primary)}
-#map{z-index:1;flex:1}
+#map{z-index:1}
 .leaflet-container{background:#0d1018}
 .status-bar{background:var(--surface);border-top:1px solid var(--border);padding:0.45rem 1.5rem;display:flex;align-items:center;gap:1.5rem;font-size:0.75rem;color:var(--muted);}
 .status-dot{width:7px;height:7px;border-radius:50%;background:var(--yellow);display:inline-block;margin-right:0.35rem}
@@ -221,6 +246,9 @@ btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 0.9rem;bor
   </div>
 </div>
 
+<!-- Map and sidebar are siblings inside .app-layout.
+     On desktop: sidebar left (col 1), map right (col 2).
+     On mobile:  map gets order:1 (top), sidebar gets order:2 (below). -->
 <div class="app-layout">
   <div class="sidebar">
     <div class="sidebar-header">
@@ -294,6 +322,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; <a href="https://carto.com">CARTO</a>',maxZoom:19}).addTo(map);
   renderAll(CHECKPOINTS);
   document.getElementById('share-url').value=window.location.href;
+  // Leaflet needs a size recalc after CSS reorder settles on mobile
+  setTimeout(()=>map.invalidateSize(),120);
 });
 
 function riskColor(r){return r==='High'?'#ef4444':r==='Medium'?'#eab308':'#22c55e'}
@@ -317,6 +347,8 @@ function renderAll(data){
     m.on('click',()=>selectCard(cp,card));markers.push(m);
   });
   if(data.length)map.setView([data[0].lat,data[0].lng],12);
+  // Recalc map size whenever results update (filter changes can resize the sidebar)
+  setTimeout(()=>map.invalidateSize(),80);
 }
 function selectCard(cp,card){
   document.querySelectorAll('.checkpoint-card').forEach(c=>c.classList.remove('active'));
